@@ -1130,6 +1130,14 @@ Page band karne ke baad ye values dobara nahi dikhengi (sirf rotate kar sakte ha
 - `Turabees-Whatsapp-Bot/extension/injected.js`: `waNumber`, `deviceId`, `waState` report; loop-guard ko `chatId|text` + 2 min TTL (abhi ek chat ka "Ok" doosre chat ke "Ok" ko ignore kar deta hai); per-chat in-flight/stale response handling; payload se `previewUrl`/`thumbnailBase64` hatao (base64Data ka duplicate).
 - `Turabees-Whatsapp-Bot/extension/content.js`: `waState`/`waNumber` relay; dashboard/history/contacts relay hata do.
 
+**Step 4 mein asal mein kya hua (V2 `extension/`, purani copy nahi chhedi):**
+- Plugin ka source `whatsup-plugin/extension/` mein hai. `manifest.base.json` + `config.js` + `node build.mjs --env dev|staging|prod [--url https://...]` se `dist/<env>/` banta hai. staging/prod ka URL `--url` ya `GATEWAY_STAGING_URL` / `GATEWAY_PROD_URL` se aata hai (https + public host zaroori; prod build mein "localhost" ka lafz ho to build fail).
+- `deviceId` background mein banta hai (`chrome.storage.local`) aur header mein jata hai; `injected.js` ko ye nahi chahiye. `waNumber` injected se aata hai (`X-WA-Number`); number na mile to header nahi jata.
+- **`waState` Phase 1 mein nahi banaya.** Connection-state ka signal abhi verify nahi hua (Phase 2 Spike, section 11). Phase 1 popup mein WhatsApp line bhi nahi hai. Spike ke baad Phase 2 mein aayega.
+- Control ek hi flag hai: background `active = key hai + pause nahi + toggle on` nikal kar tabs ko bhejta hai. "Log Messages" toggle hata diya. Group messages ko plugin ignore karta hai, kahin bhejta nahi.
+- Stale rule: ek chat ke liye sirf aakhri request ka jawab bheja jata hai (naya burst chala gaya to purana jawab drop), ek jawab sirf ek baar, aur 90 second se purana jawab drop. Naye request ki `chatHistory` mein pehle ke messages hote hain.
+- Burst wait abhi bhi code mein **3.5 second** hai (`BURST_WAIT_MS`), jabke is plan aur `ai-contract.md` mein 7 second likha hai. Behavior badla nahi; faisla user ka (neeche summary mein pucha gaya).
+
 **Code changes (Phase 2):**
 - `background.js` ES module, `extension/vendor/socket.io.esm.min.js` bundle.
 
@@ -1428,7 +1436,7 @@ Computer khud hazaron random sequences banata hai: `api_post_job`, `plugin_conne
 - [x] P1: `/v1/plugin/whoami`, `/v1/ai-reply` (modes, SSRF, signature), health endpoints
 - [ ] P1B: Test Lab (canned, echo, mock_bot, paused, simulate-incoming, request logs, bot connection test)
 - [ ] P1B: admin shell (login, vendors list, create vendor with onboarding fields + show-once keys, mode toggles)
-- [ ] P1: plugin (popup API key + whoami, config.js + build script, background, injected fixes, manifest)
+- [x] P1: plugin (popup API key + whoami, config.js + build script, background, injected fixes, manifest)
 - [ ] P1: vendor kit (contract doc + FastAPI reference bot with signature verify, section 7.5)
 - [ ] P1: tests (unit, API integration, sandbox modes, signature cross-language, Playwright smoke, 2-profile routing)
 - [ ] P2 spike: new chat send, connection state, ack level, LID mapping, buttons feasibility

@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "WhatsApp Auto-Reply Gateway",
+  "version": "2.0.0",
+  "description": "Forwards customer WhatsApp messages to your bot via the vendor gateway and sends the replies.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://web.whatsapp.com/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "WhatsApp Auto-Reply"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["injected.js"],
+      "matches": ["https://web.whatsapp.com/*"]
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "wa-gateway-extension",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Chrome extension for the WhatsApp Vendor Gateway. Node is used for the build script and tests only.",
+  "scripts": {
+    "build:dev": "node build.mjs --env dev",
+    "build:staging": "node build.mjs --env staging",
+    "build:prod": "node build.mjs --env prod",
+    "check": "node --check background.js && node --check content.js && node --check injected.js && node --check popup.js && node --check gateway-client.js && node --check build.mjs",
+    "test": "node --test \"tests/*.test.mjs\""
+  }
+}

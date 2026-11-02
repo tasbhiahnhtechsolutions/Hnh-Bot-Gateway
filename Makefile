@@ -1,10 +1,10 @@
-.PHONY: help up down logs migrate seed gateway lint format typecheck test test-unit
+.PHONY: help up down logs migrate seed gateway lint format typecheck test test-unit ext-test ext-dev ext-prod
 
 COMPOSE ?= docker compose
 BACKEND := cd backend &&
 
 help:
-	@echo "make up | down | logs | migrate | seed | gateway ARGS=... | lint | format | typecheck | test | test-unit"
+	@echo "make up | down | logs | migrate | seed | gateway ARGS=... | lint | format | typecheck | test | test-unit | ext-test | ext-dev | ext-prod URL=..."
 
 .env:
 	@cp .env.example .env
@@ -47,3 +47,15 @@ test-unit:
 # Integration tests start Postgres/Redis with testcontainers, so Docker must be running.
 test:
 	$(BACKEND) uv run pytest -q --cov --cov-report=term-missing
+
+# Chrome extension (Node is used for the build script and tests only).
+ext-test:
+	cd extension && npm run -s check && npm test
+
+# Load extension/dist/dev as an unpacked extension in Chrome.
+ext-dev:
+	cd extension && node build.mjs --env dev
+
+# make ext-prod URL=https://api.example.com  (staging: node build.mjs --env staging --url ...)
+ext-prod:
+	cd extension && node build.mjs --env prod --url "$(URL)"

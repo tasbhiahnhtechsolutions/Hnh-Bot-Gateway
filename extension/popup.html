@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WhatsApp Auto-Reply</title>
+  <style>
+    :root {
+      --bg: #0f141c;
+      --card-bg: #161d27;
+      --card-border: #232d3d;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --accent-green: #10b981;
+      --accent-green-bg: rgba(16, 185, 129, 0.15);
+      --accent-red: #ef4444;
+      --accent-red-bg: rgba(239, 68, 68, 0.15);
+      --accent-yellow: #f59e0b;
+      --toggle-active: #25d366;
+      --toggle-inactive: #475569;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      width: 300px;
+      background: var(--bg);
+      color: var(--text-main);
+      padding: 16px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .header-icon {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      background: linear-gradient(135deg, #25d366, #128c7e);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+    }
+
+    .header-title {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: -0.2px;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+
+    .section {
+      padding-top: 10px;
+      margin-top: 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .section:first-child {
+      padding-top: 0;
+      margin-top: 0;
+      border-top: none;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 8px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .status-badge.online {
+      background: var(--accent-green-bg);
+      color: var(--accent-green);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .status-badge.offline {
+      background: var(--accent-red-bg);
+      color: var(--accent-red);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .status-badge.checking {
+      background: rgba(148, 163, 184, 0.15);
+      color: var(--text-muted);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .key-input {
+      width: 100%;
+      margin-top: 6px;
+      padding: 7px 8px;
+      border-radius: 6px;
+      border: 1px solid var(--card-border);
+      background: #0b1017;
+      color: var(--text-main);
+      font-size: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .key-input:focus {
+      outline: none;
+      border-color: #38bdf8;
+    }
+
+    .btn {
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      background: rgba(56, 189, 248, 0.12);
+      color: #7dd3fc;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .btn:hover { background: rgba(56, 189, 248, 0.22); color: #fff; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn.link {
+      border: none;
+      background: none;
+      padding: 0;
+      color: var(--text-muted);
+      font-weight: 500;
+      text-decoration: underline;
+    }
+
+    .hint { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
+    .msg { font-size: 11px; margin-top: 6px; }
+    .msg.ok { color: var(--accent-green); }
+    .msg.bad { color: var(--accent-red); }
+    .msg.warn { color: var(--accent-yellow); }
+
+    .connected-name { font-size: 13px; font-weight: 600; margin-top: 4px; overflow-wrap: anywhere; }
+    .connected-number { font-size: 12px; color: var(--text-muted); }
+
+    .toggle-title { font-size: 12px; font-weight: 500; }
+    .toggle-desc { font-size: 10px; color: var(--text-muted); }
+
+    .switch { position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; cursor: pointer; inset: 0;
+      background-color: var(--toggle-inactive);
+      transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius: 22px;
+    }
+    .slider:before {
+      position: absolute; content: "";
+      height: 16px; width: 16px; left: 3px; bottom: 3px;
+      background-color: #ffffff;
+      transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius: 50%;
+    }
+    input:checked + .slider { background-color: var(--toggle-active); }
+    input:checked + .slider:before { transform: translateX(18px); }
+    input:disabled + .slider { opacity: 0.5; cursor: not-allowed; }
+
+    .last-error { font-size: 11px; color: var(--text-main); margin-top: 4px; overflow-wrap: anywhere; }
+    .last-error.none { color: var(--text-muted); }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-icon">&#128172;</div>
+    <div class="header-title">WhatsApp Auto-Reply</div>
+  </div>
+
+  <div class="card">
+    <div class="section">
+      <div class="row">
+        <span class="label">Backend</span>
+        <div id="backendBadge" class="status-badge checking">
+          <span class="dot"></span>
+          <span id="backendText">Checking...</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <label class="label" for="apiKeyInput">API Key</label>
+      <div class="row">
+        <input id="apiKeyInput" class="key-input" type="password" autocomplete="off" spellcheck="false" placeholder="wab_live_...">
+        <button id="saveBtn" class="btn" type="button">Save</button>
+      </div>
+      <div id="keyHint" class="hint hidden"></div>
+      <div id="keyMessage" class="msg hidden"></div>
+    </div>
+
+    <div id="connectedSection" class="section hidden">
+      <span class="label">Connected as</span>
+      <div id="connectedName" class="connected-name"></div>
+      <div id="connectedNumber" class="connected-number"></div>
+      <div id="numberWarning" class="msg warn hidden"></div>
+      <div class="hint"><button id="removeKeyBtn" class="btn link" type="button">Remove key</button></div>
+    </div>
+
+    <div class="section">
+      <div class="row">
+        <div>
+          <div class="toggle-title">Auto-Reply</div>
+          <div class="toggle-desc">1-on-1 chats only</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="autoReplyToggle" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="row">
+        <span class="label">Last error</span>
+        <button id="resumeBtn" class="btn hidden" type="button">Resume</button>
+      </div>
+      <div id="lastError" class="last-error none">None</div>
+    </div>
+  </div>
+
+  <script src="gateway-client.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

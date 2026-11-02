@@ -10,6 +10,7 @@ Source of truth: `VENDOR_GATEWAY_PLAN.md`. Vendor contract: `ai-contract.md`.
 | Path | What |
 |---|---|
 | `backend/` | FastAPI app (routers, services, repositories, models), Alembic migrations, tests |
+| `extension/` | Chrome extension (MV3): popup, background, content, injected, build script, Node tests |
 | `docker-compose.yml` | Dev stack: Postgres, Redis, API |
 | `Makefile` | `make up`, `make test`, `make lint`, `make typecheck` |
 
@@ -38,3 +39,19 @@ Inbound modes: `forward`, `canned`, `echo`, `mock_bot`, `paused`. Bot failures a
 502/504 and nothing is sent to the customer.
 
 Host ports: API `8000`, Postgres `5433`, Redis `6380` (so they do not clash with local installs).
+
+## Chrome extension (Phase 1, step 4)
+
+```bash
+make ext-test                 # node --check + 65 Node tests (no browser needed)
+make ext-dev                  # builds extension/dist/dev (gateway http://localhost:8000)
+make ext-prod URL=https://api.example.com
+```
+
+1. `make up && make seed`, copy a demo vendor's LIVE key.
+2. Chrome -> `chrome://extensions` -> Developer mode -> Load unpacked -> `extension/dist/dev`.
+3. Open the popup, paste the key, Save. It shows "Connected as <business> +92...".
+4. Open web.whatsapp.com and message that number from another phone.
+
+staging/prod builds need an https public URL (`--url` or `GATEWAY_STAGING_URL` / `GATEWAY_PROD_URL`)
+and contain no localhost permission.
