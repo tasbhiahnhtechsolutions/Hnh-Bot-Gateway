@@ -1,5 +1,9 @@
+import base64
+import json
 import re
 import uuid
+from pathlib import Path
+from typing import Any
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -18,6 +22,7 @@ def settings(migrated_url: str) -> Settings:
         app_env=AppEnv.TEST,
         database_url=migrated_url,
         allow_private_bot_urls=True,
+        enable_mock_bot=True,
     )
 
 
@@ -143,3 +148,144 @@ async def test_seed_refuses_where_private_urls_are_not_allowed(
     assert "SEED_NOT_ALLOWED" in capsys.readouterr().err
     async with await one_session(engine) as db:
         assert await vendors.list_all(db) == []
+
+
+# --- simulate-incoming -----------------------------------------------------------------------
+
+
+async def vendor_id_of(engine: AsyncEngine, name: str) -> str:
+    async with await one_session(engine) as db:
+        vendor = await vendors.get_by_business_name(db, name)
+        assert vendor is not None
+        return str(vendor.id)
+
+
+async def simulate(
+    settings: Settings, capsys: pytest.CaptureFixture[str], *argv: str
+) -> tuple[int, dict[str, Any]]:
+    code = await run(["simulate-incoming", *argv], settings)
+    out = capsys.readouterr().out
+    return code, json.loads(out) if out.strip().startswith("{") else {}
+
+
+async def test_simulate_canned_uses_the_seeded_rules_without_calling_a_bot(
+    settings: Settings, engine: AsyncEngine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    await run(["seed"], settings)
+    capsys.readouterr()
+    vid = await vendor_id_of(engine, "demo-canned")
+
+    code, report = await simulate(settings, capsys, vid, "--text", "kya price hai?")
+    assert code == 0
+    assert report["ok"] is True
+    assert report["mode"] == "canned"
+    assert report["replies"] == ["Price 85,000 se shuru hota hai."]
+    assert report["bot"] is None
+
+    code, report = await simulate(settings, capsys, vid, "--text", "hello")
+    assert report["replies"] == ["Shukriya! Hum jald jawab denge."]
+
+
+async def test_simulate_with_an_attached_image(
+    settings: Settings, engine: AsyncEngine, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    await run(["seed"], settings)
+    capsys.readouterr()
+    picture = tmp_path / "dress.jpg"
+    picture.write_bytes(b"\xff\xd8\xff fake jpeg bytes")
+
+    code, report = await simulate(
+        settings, capsys, await vendor_id_of(engine, "demo-canned"), "--file", str(picture)
+    )
+    assert code == 0
+    assert report["replies"] == ["Photo mil gayi, jaldi dekhte hain."]
+
+    code, report = await simulate(
+        settings,
+        capsys,
+        await vendor_id_of(engine, "demo-echo"),
+        "--text",
+        "look",
+        "--file",
+        str(picture),
+    )
+    assert report["replies"] == ["Aap ne likha: look (1 image, 1 KB)"]
+
+
+async def test_simulate_mock_bot_report_shows_headers_and_hides_file_contents(
+    settings: Settings, engine: AsyncEngine, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    await run(["seed"], settings)
+    capsys.readouterr()
+    vid = await vendor_id_of(engine, "demo-mockbot")
+    doc = tmp_path / "measurements.pdf"
+    doc.write_bytes(b"%PDF-1.4 SECRET-FILE-CONTENT")
+
+    code, report = await simulate(settings, capsys, vid, "--text", "hi", "--file", str(doc))
+    assert code == 0
+    assert report["replies"] == ["Mock bot: received 1 message(s)."]
+    bot = report["bot"]
+    assert bot["responseStatus"] == 200
+    assert bot["requestHeaders"]["X-Gateway-Signature"].startswith("v1=")
+    assert bot["requestHeaders"]["X-Gateway-Timestamp"].isdigit()
+    assert bot["validationErrors"] == []
+    assert "SECRET-FILE-CONTENT" not in json.dumps(report)
+    assert base64.b64encode(b"%PDF-1.4 SECRET-FILE-CONTENT").decode() not in json.dumps(report)
+    media = bot["request"]["incomingMessages"][0]["media"]
+    assert media["mediaType"] == "document"
+    assert media["base64Data"].startswith("<redacted")
+
+
+@pytest.mark.parametrize(
+    ("scenario", "code"),
+    [
+        ("error500", "BOT_HTTP_ERROR"),
+        ("badjson", "BOT_INVALID_RESPONSE"),
+        ("wrongshape", "BOT_INVALID_RESPONSE"),
+        ("redirect", "BOT_REDIRECT_NOT_ALLOWED"),
+        ("huge", "BOT_RESPONSE_TOO_LARGE"),
+    ],
+)
+async def test_simulate_failure_scenarios_print_a_report_and_exit_3(
+    settings: Settings,
+    engine: AsyncEngine,
+    capsys: pytest.CaptureFixture[str],
+    scenario: str,
+    code: str,
+) -> None:
+    await run(["seed"], settings)
+    capsys.readouterr()
+    vid = await vendor_id_of(engine, "demo-mockbot")
+
+    exit_code, report = await simulate(
+        settings, capsys, vid, "--text", "hi", "--scenario", scenario
+    )
+    assert exit_code == 3
+    assert report["ok"] is False
+    assert report["errorCode"] == code
+    assert report["replies"] == []
+    if code == "BOT_INVALID_RESPONSE":
+        assert report["bot"]["validationErrors"]
+
+
+async def test_simulate_empty_scenario_is_silence_not_an_error(
+    settings: Settings, engine: AsyncEngine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    await run(["seed"], settings)
+    capsys.readouterr()
+    vid = await vendor_id_of(engine, "demo-mockbot")
+    exit_code, report = await simulate(settings, capsys, vid, "--text", "hi", "--scenario", "empty")
+    assert (exit_code, report["ok"], report["replies"]) == (0, True, [])
+
+
+async def test_simulate_input_errors(
+    settings: Settings, engine: AsyncEngine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    await run(["seed"], settings)
+    capsys.readouterr()
+    vid = await vendor_id_of(engine, "demo-echo")
+
+    assert await run(["simulate-incoming", vid], settings) == 1
+    assert "give --text and/or --file" in capsys.readouterr().err
+    assert await run(["simulate-incoming", str(uuid.uuid4()), "--text", "x"], settings) == 1
+    assert "VENDOR_NOT_FOUND" in capsys.readouterr().err

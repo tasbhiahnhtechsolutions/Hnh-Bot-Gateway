@@ -6,8 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ApiError
 from app.core.security import SecretBox
-from app.models import InboundMode
-from app.repositories import vendors
+from app.models import CannedMatchType, CannedRule, InboundMode
+from app.repositories import canned_rules, vendors
 from app.schemas.vendor import VendorCreate
 from app.services.vendors import CreatedVendor, create_vendor
 
@@ -41,6 +41,15 @@ DEMO_VENDORS: tuple[VendorCreate, ...] = (
 )
 
 
+# Plan section 7.1 example rules, so ``demo-canned`` answers something sensible out of the box.
+CANNED_DEMO_RULES: tuple[tuple[int, CannedMatchType, str, str], ...] = (
+    (10, CannedMatchType.TEXT_CONTAINS, "price", "Price 85,000 se shuru hota hai."),
+    (20, CannedMatchType.MEDIA_TYPE, "image", "Photo mil gayi, jaldi dekhte hain."),
+    (30, CannedMatchType.MEDIA_TYPE, "ptt", "Voice note mila, text mein likh dein?"),
+    (1000, CannedMatchType.DEFAULT, "", "Shukriya! Hum jald jawab denge."),
+)
+
+
 @dataclass(frozen=True, slots=True)
 class SeedResult:
     created: list[CreatedVendor]
@@ -61,7 +70,16 @@ async def seed_demo_vendors(
         if await vendors.get_by_business_name(db, spec.business_name) is not None:
             skipped.append(spec.business_name)
             continue
-        created.append(
-            await create_vendor(db, spec, box=box, allow_private_bot_urls=allow_private_bot_urls)
-        )
+        made = await create_vendor(db, spec, box=box, allow_private_bot_urls=allow_private_bot_urls)
+        if spec.inbound_mode is InboundMode.CANNED:
+            for priority, match_type, value, reply in CANNED_DEMO_RULES:
+                rule = CannedRule(
+                    vendor_id=made.vendor.id,
+                    priority=priority,
+                    match_type=match_type.value,
+                    match_value=value,
+                    reply_text=reply,
+                )
+                await canned_rules.add(db, rule)
+        created.append(made)
     return SeedResult(created=created, skipped=skipped)

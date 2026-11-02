@@ -2,7 +2,6 @@
 
 import logging
 import re
-import sys
 from collections.abc import Mapping, MutableMapping
 from typing import Any
 
@@ -89,7 +88,8 @@ def configure_logging(level: str = "INFO", json_logs: bool = True) -> None:
         wrapper_class=structlog.make_filtering_bound_logger(
             logging.getLevelNamesMapping()[level.upper()]
         ),
-        logger_factory=structlog.PrintLoggerFactory(file=sys.stdout),
+        # No explicit file: stdout is looked up at log time, so redirected stdout is honoured.
+        logger_factory=structlog.PrintLoggerFactory(),
         cache_logger_on_first_use=False,
     )
 

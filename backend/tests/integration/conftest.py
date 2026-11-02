@@ -1,11 +1,17 @@
 """Real Postgres and Redis via testcontainers (needs Docker). Migrations build the schema."""
 
+import json
 import os
-from collections.abc import AsyncIterator, Iterator
+import uuid
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from dataclasses import dataclass
+from typing import Any
 
+import httpx
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi import FastAPI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -15,6 +21,13 @@ from sqlalchemy.ext.asyncio import (
 )
 from testcontainers.community.postgres import PostgresContainer
 from testcontainers.community.redis import RedisContainer
+
+from app.core.config import AppEnv, Settings
+from app.core.security import SecretBox
+from app.main import create_app
+from app.schemas.vendor import VendorCreate
+from app.services.inbound import InboundDeps
+from app.services.vendors import CreatedVendor, create_vendor
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
@@ -79,3 +92,106 @@ async def clean_db(engine: AsyncEngine) -> AsyncIterator[None]:
     await wipe()
     yield
     await wipe()
+
+
+# --- full API with real Postgres + Redis and a fake vendor-bot network -----------------------
+
+
+class FakeBot:
+    """Stands in for every vendor bot on the internet. Records what was sent to it."""
+
+    def __init__(self) -> None:
+        self.requests: list[httpx.Request] = []
+        self.handler: Callable[[httpx.Request], httpx.Response] = lambda _r: httpx.Response(
+            200, json={"replies": ["bot says hi"]}
+        )
+        self.transport = httpx.MockTransport(self._handle)
+
+    async def _handle(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        return self.handler(request)
+
+
+@dataclass
+class Api:
+    client: httpx.AsyncClient
+    app: FastAPI
+    settings: Settings
+    box: SecretBox
+    bot: FakeBot
+
+    async def vendor(self, **fields: object) -> CreatedVendor:
+        values: dict[str, object] = {
+            "business_name": f"Vendor {uuid.uuid4().hex[:6]}",
+            "whatsapp_number": str(923000000000 + uuid.uuid4().int % 10**9),
+            "email": "v@example.com",
+            "bot_base_url": "http://bot.test",
+        }
+        values.update(fields)
+        async with self.app.state.session_factory() as db:
+            created = await create_vendor(
+                db,
+                VendorCreate(**values),
+                box=self.box,
+                allow_private_bot_urls=True,
+            )
+            await db.commit()
+        return created
+
+    async def post_reply(
+        self,
+        key: str,
+        body: dict[str, Any] | bytes | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> httpx.Response:
+        content = body if isinstance(body, bytes) else json.dumps(body or REQUEST_BODY).encode()
+        all_headers = {"X-API-Key": key, "Content-Type": "application/json", **(headers or {})}
+        return await self.client.post("/v1/ai-reply", content=content, headers=all_headers)
+
+
+REQUEST_BODY: dict[str, Any] = {
+    "chatId": "923001112222@c.us",
+    "chatTitle": "Sara Khan",
+    "senderName": "Sara Khan",
+    "senderNumber": "+923001112222",
+    "isSaved": False,
+    "incomingMessages": [{"text": "Red lehenga available hai?", "timestamp": "19:30:12"}],
+    "chatHistory": [],
+}
+
+MakeApi = Callable[..., Awaitable[Api]]
+
+
+@pytest.fixture
+async def make_api(migrated_url: str, redis_url: str, clean_db: None) -> AsyncIterator[MakeApi]:
+    created: list[Api] = []
+
+    async def factory(**overrides: object) -> Api:
+        values: dict[str, object] = {
+            "app_env": AppEnv.TEST,
+            "database_url": migrated_url,
+            "redis_url": redis_url,
+            "allow_private_bot_urls": True,
+            "enable_mock_bot": True,
+            "bot_timeout_seconds": 5.0,
+        }
+        values.update(overrides)
+        settings = Settings(**values)  # type: ignore[arg-type]
+        app = create_app(settings)
+        await app.state.redis.flushdb()
+        bot = FakeBot()
+        box = SecretBox(settings.secret_encryption_key.get_secret_value())
+        app.state.inbound_deps = InboundDeps(
+            settings=settings, box=box, bot_transport=bot.transport
+        )
+        client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
+        api = Api(client=client, app=app, settings=settings, box=box, bot=bot)
+        created.append(api)
+        return api
+
+    yield factory
+
+    for api in created:
+        await api.client.aclose()
+        await api.app.state.redis.aclose()
+        await api.app.state.engine.dispose()

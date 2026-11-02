@@ -2,7 +2,7 @@
 
 from enum import StrEnum
 from functools import lru_cache
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -34,6 +34,18 @@ class Settings(BaseSettings):
     # Plan section 3.1: dev/test only. The app must not start in prod with these on.
     allow_private_bot_urls: bool = False
     enable_mock_bot: bool = False
+
+    # Inbound pipeline limits (plan section 6 and ai-contract.md section 6.4 / 9).
+    max_request_body_bytes: int = 40 * 1024 * 1024
+    max_bot_response_bytes: int = 1024 * 1024
+    bot_timeout_seconds: float = 30.0
+    mock_bot_slow_seconds: float = 40.0
+
+    # Plan section 16, point 2: "warn" in Phase 1, "reject" (strict) from Phase 2.
+    wa_number_mismatch_policy: Literal["warn", "reject"] = "warn"
+
+    # Wrong-key attempts allowed per client IP per minute (plan section 4).
+    auth_fail_limit_per_minute: int = 20
 
     @model_validator(mode="after")
     def _check_environment_safety(self) -> Self:

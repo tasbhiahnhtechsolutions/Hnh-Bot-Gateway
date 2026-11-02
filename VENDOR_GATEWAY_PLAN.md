@@ -1424,8 +1424,8 @@ Computer khud hazaron random sequences banata hai: `api_post_job`, `plugin_conne
 
 - [x] P1: backend skeleton (FastAPI, config, DB, Alembic, docker-compose, Makefile, CI), vendors + api_keys (live/test), key utils
 - [x] P1: CLI (create-vendor, rotate-key, list-vendors) + seed
-- [ ] P1: CLI simulate-incoming (needs the `/v1/ai-reply` pipeline, so it is built in the step below)
-- [ ] P1: `/v1/plugin/whoami`, `/v1/ai-reply` (modes, SSRF, signature), health endpoints
+- [x] P1: CLI simulate-incoming (built together with the `/v1/ai-reply` pipeline)
+- [x] P1: `/v1/plugin/whoami`, `/v1/ai-reply` (modes, SSRF, signature), health endpoints
 - [ ] P1B: Test Lab (canned, echo, mock_bot, paused, simulate-incoming, request logs, bot connection test)
 - [ ] P1B: admin shell (login, vendors list, create vendor with onboarding fields + show-once keys, mode toggles)
 - [ ] P1: plugin (popup API key + whoami, config.js + build script, background, injected fixes, manifest)

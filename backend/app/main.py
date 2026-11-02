@@ -7,10 +7,13 @@ from fastapi import FastAPI
 from redis.asyncio import Redis
 
 from app.api import health
+from app.api.v1 import plugin
 from app.core.config import AppEnv, Settings, get_settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
+from app.core.security import SecretBox
 from app.db.session import create_engine, create_session_factory
+from app.services.inbound import InboundDeps
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -40,7 +43,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.engine = engine
     app.state.session_factory = create_session_factory(engine)
     app.state.redis = redis
+    app.state.inbound_deps = InboundDeps(
+        settings=settings, box=SecretBox(settings.secret_encryption_key.get_secret_value())
+    )
 
     register_error_handlers(app)
     app.include_router(health.router)
+    app.include_router(plugin.router)
     return app
