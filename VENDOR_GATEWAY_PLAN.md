@@ -602,6 +602,14 @@ reference-bot/
 ```
 
 - `docker-compose` mein `reference-bot` service, aur `make bot` command.
+
+**Step 6 mein asal mein kya hua (`reference-bot/`):**
+- Backend se bilkul alag project hai (apna `pyproject.toml`, `uv.lock`, Dockerfile, CI job), taake vendor folder copy kar sake. Backend ka koi code import nahi karta.
+- `security.py` contract ke section 5.3 ka formula hai; tests apna alag signer rakhte hain (doc ka formula, bot ka code nahi), taake drift pakda jaye. Known vector `HMAC("whsec_test", '1730000000.{"hello":"world"}')` `openssl` se bhi check hua, Step 7 ka Node check isi ko use karega.
+- Signature **body padhne se pehle** check hota hai (galat signature par khali 401, body ka koi zikr nahi); sahi signature + kharab body par 400. Rotation header (do signatures) chalta hai. Secret `SecretStr` hai: repr/log mein nahi aata, aur bot `BOT_SECRET` ke baghair start hi nahi hota.
+- Same `requestId` dobara aaye (gateway retry) to wahi saved jawab jata hai (1000 tak yaad rakhta hai, memory mein).
+- `compose` mein service profile `bot` ke andar hai, taake `make up` ko secret na chahiye. `make bot BOT_SECRET=whsec_...`, `make bot-local`, `make bot-test`, `make bot-lint`. Vendor ko `--bot-url http://reference-bot:9000` se banao (api container `localhost` se bot tak nahi pahunch sakta).
+- Asli Docker stack par end-to-end chala kar dekha: galat secret -> bot 401 -> gateway `BOT_HTTP_ERROR`; sahi secret -> `test-bot` PASS, aur `/v1/ai-reply` live key se `{"replies":["Aap ne likha: ..."]}` mila. Bot ke logs mein na secret tha na customer ka text.
 - Ye backend ke andar ke `mock_bot` mode (7.1) se alag hai: `mock_bot` backend ka hissa hai (failure scenarios ke liye), reference bot alag chalne wala app hai (forward mode ke asli raaste ke liye).
 
 ---
@@ -1450,7 +1458,7 @@ Computer khud hazaron random sequences banata hai: `api_post_job`, `plugin_conne
 - [x] P1B: Test Lab (canned, echo, mock_bot, paused, simulate-incoming, request logs, bot connection test)
 - [x] P1B: admin shell (login, vendors list, create vendor with onboarding fields + show-once keys, mode toggles)
 - [x] P1: plugin (popup API key + whoami, config.js + build script, background, injected fixes, manifest)
-- [ ] P1: vendor kit (contract doc + FastAPI reference bot with signature verify, section 7.5)
+- [x] P1: vendor kit (contract doc + FastAPI reference bot with signature verify, section 7.5)
 - [ ] P1: tests (unit, API integration, sandbox modes, signature cross-language, Playwright smoke, 2-profile routing)
 - [ ] P2 spike: new chat send, connection state, ack level, LID mapping, buttons feasibility
 - [ ] P2: migrations (outbound_jobs, devices, webhooks) + one_inflight index (`admins`, `audit_log` Phase 1B mein ban chuke)

@@ -1,4 +1,5 @@
-# Dev stack (plan section 3.2). Celery, Toxiproxy and the reference bot join in later steps.
+# Dev stack (plan section 3.2). Celery and Toxiproxy join in Phase 2.
+# The reference bot only starts with `make bot BOT_SECRET=whsec_...` (profile "bot").
 services:
   postgres:
     image: postgres:16-alpine
@@ -47,6 +48,21 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # A vendor-style bot that follows ai-contract.md. The api container reaches it at
+  # http://reference-bot:9000 (create the vendor with --bot-url http://reference-bot:9000).
+  reference-bot:
+    profiles: ["bot"]
+    build: ./reference-bot
+    environment:
+      BOT_SECRET: ${BOT_SECRET:-}
+    ports:
+      - "127.0.0.1:9000:9000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9000/health')"]
       interval: 5s
       timeout: 3s
       retries: 20

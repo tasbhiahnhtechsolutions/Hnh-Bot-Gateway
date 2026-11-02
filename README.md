@@ -11,7 +11,8 @@ Source of truth: `VENDOR_GATEWAY_PLAN.md`. Vendor contract: `ai-contract.md`.
 |---|---|
 | `backend/` | FastAPI app (routers, services, repositories, models), Alembic migrations, tests |
 | `extension/` | Chrome extension (MV3): popup, background, content, injected, build script, Node tests |
-| `docker-compose.yml` | Dev stack: Postgres, Redis, API |
+| `reference-bot/` | Example vendor bot (FastAPI) that follows `ai-contract.md`; vendors can copy it |
+| `docker-compose.yml` | Dev stack: Postgres, Redis, API (+ reference bot with `make bot`) |
 | `Makefile` | `make up`, `make test`, `make lint`, `make typecheck` |
 
 ## Quick start
@@ -39,6 +40,20 @@ Inbound modes: `forward`, `canned`, `echo`, `mock_bot`, `paused`. Bot failures a
 502/504 and nothing is sent to the customer.
 
 Host ports: API `8000`, Postgres `5433`, Redis `6380` (so they do not clash with local installs).
+
+## Reference bot (Phase 1, step 6)
+
+`reference-bot/` is a standalone FastAPI app that follows `ai-contract.md`: it checks the HMAC
+signature, understands every media type and answers with `{"replies": [...]}`. Vendors can copy it.
+
+```bash
+make gateway ARGS="create-vendor --name 'Ref Bot Shop' --number 923001230099 --email r@x.com --bot-url http://reference-bot:9000"
+make bot BOT_SECRET=whsec_...          # the Bot secret printed above; starts it on :9000
+make gateway ARGS="test-bot <vendor-id>"
+make bot-test bot-lint
+```
+
+See `reference-bot/README.md`.
 
 ## Admin panel and Test Lab (Phase 1B, step 5)
 

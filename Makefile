@@ -1,10 +1,10 @@
-.PHONY: help up down logs migrate seed gateway lint format typecheck test test-unit ext-test ext-dev ext-prod
+.PHONY: help up down logs migrate seed gateway lint format typecheck test test-unit ext-test ext-dev ext-prod bot bot-local bot-test bot-lint
 
 COMPOSE ?= docker compose
 BACKEND := cd backend &&
 
 help:
-	@echo "make up | down | logs | migrate | seed | gateway ARGS=... | lint | format | typecheck | test | test-unit | ext-test | ext-dev | ext-prod URL=..."
+	@echo "make up | down | logs | migrate | seed | gateway ARGS=... | lint | format | typecheck | test | test-unit | ext-test | ext-dev | ext-prod URL=... | bot BOT_SECRET=... | bot-local | bot-test | bot-lint"
 
 .env:
 	@cp .env.example .env
@@ -59,3 +59,19 @@ ext-dev:
 # make ext-prod URL=https://api.example.com  (staging: node build.mjs --env staging --url ...)
 ext-prod:
 	cd extension && node build.mjs --env prod --url "$(URL)"
+
+# Reference bot (reference-bot/). BOT_SECRET is the whsec_... printed when the vendor was created.
+bot:
+	@test -n "$(BOT_SECRET)" || { echo "usage: make bot BOT_SECRET=whsec_..."; exit 1; }
+	BOT_SECRET="$(BOT_SECRET)" $(COMPOSE) --profile bot up -d --build reference-bot
+
+# Same bot on the host, port 9000 (no Docker): make bot-local BOT_SECRET=whsec_...
+bot-local:
+	@test -n "$(BOT_SECRET)" || { echo "usage: make bot-local BOT_SECRET=whsec_..."; exit 1; }
+	cd reference-bot && BOT_SECRET="$(BOT_SECRET)" uv run python -m app
+
+bot-test:
+	cd reference-bot && uv run pytest -q
+
+bot-lint:
+	cd reference-bot && uv run ruff check . && uv run ruff format --check . && uv run mypy
