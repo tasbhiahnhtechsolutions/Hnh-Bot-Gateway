@@ -44,8 +44,11 @@ async def process_inbound(
     request_id: str,
     *,
     scenario: MockScenario = MockScenario.OK,
+    mode_override: InboundMode | None = None,
 ) -> InboundResult:
-    mode = vendor.inbound_mode
+    # ``mode_override`` lets the sandbox and the connection test reach the real bot even when the
+    # vendor is switched to canned/echo/paused.
+    mode = mode_override.value if mode_override else vendor.inbound_mode
     if mode == InboundMode.PAUSED:
         return InboundResult([], mode, None)
     if mode == InboundMode.CANNED:

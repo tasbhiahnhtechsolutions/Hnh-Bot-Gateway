@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from redis.asyncio import Redis
 
 from app.api import health
-from app.api.v1 import plugin
+from app.api.v1 import plugin, sandbox
 from app.core.config import AppEnv, Settings, get_settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
@@ -50,4 +50,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_error_handlers(app)
     app.include_router(health.router)
     app.include_router(plugin.router)
+    app.include_router(sandbox.router)
     return app

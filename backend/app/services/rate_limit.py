@@ -35,3 +35,22 @@ async def record_failure(redis: Redis, client_ip: str) -> None:
             await redis.expire(key, WINDOW_SECONDS)
     except RedisError as exc:
         log.warning("rate_limit_unavailable", error_type=type(exc).__name__)
+
+
+async def hit(redis: Redis, name: str, limit: int, window_seconds: int) -> int:
+    """Count one use of ``name``. Returns 0 while under ``limit``, else seconds to wait.
+
+    Used for the sandbox endpoint and admin login. Fails open if Redis is down.
+    """
+    key = f"hit:{name}"
+    try:
+        count = await redis.incr(key)
+        if count == 1:
+            await redis.expire(key, window_seconds)
+        if count <= limit:
+            return 0
+        ttl = await redis.ttl(key)
+    except RedisError as exc:
+        log.warning("rate_limit_unavailable", error_type=type(exc).__name__)
+        return 0
+    return max(int(ttl), 1)

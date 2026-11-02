@@ -11,9 +11,11 @@ from app.api.body import read_body_limited
 from app.api.deps import Auth, Db, Deps
 from app.core.errors import ApiError
 from app.core.logging import get_logger
+from app.models import RequestKind
 from app.schemas.ai_reply import CONTRACT_VERSION, AiReplyRequest
 from app.services.bot_proxy import BotCallError
 from app.services.inbound import new_request_id, process_inbound
+from app.services.request_log import record_request
 from app.services.wa_number import check_wa_number
 
 router = APIRouter(prefix="/v1", tags=["plugin"])
@@ -77,10 +79,20 @@ async def ai_reply(
         raise
     finally:
         # Metadata only: no message text, no files, no replies (plan section 14).
+        latency_ms = round((time.monotonic() - started) * 1000)
         log.info(
             "ai_reply",
             request_id=request_id,
             vendor_id=str(auth.vendor.id),
-            latency_ms=round((time.monotonic() - started) * 1000),
+            latency_ms=latency_ms,
             **outcome,
+        )
+        await record_request(
+            db,
+            vendor_id=auth.vendor.id,
+            request_id=request_id,
+            kind=RequestKind.AI_REPLY,
+            mode=auth.vendor.inbound_mode,
+            latency_ms=latency_ms,
+            error_code=outcome.get("error_code"),
         )

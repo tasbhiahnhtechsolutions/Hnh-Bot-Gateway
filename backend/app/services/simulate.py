@@ -10,7 +10,7 @@ from typing import Any, get_args
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ApiError
-from app.models import Vendor
+from app.models import InboundMode, Vendor
 from app.schemas.ai_reply import AiReplyRequest, IncomingMessage, Media, MediaType
 from app.services.bot_proxy import BotCallError, BotCallReport
 from app.services.inbound import InboundDeps, process_inbound
@@ -75,17 +75,43 @@ async def simulate_incoming(
     payload: AiReplyRequest,
     *,
     scenario: MockScenario = MockScenario.OK,
+    mode_override: InboundMode | None = None,
+    request_id: str | None = None,
 ) -> SimulationReport:
     """Same code path as a real plugin request. Errors become part of the report."""
+    mode = mode_override.value if mode_override else vendor.inbound_mode
     try:
         result = await process_inbound(
-            db, deps, vendor, payload, f"sim-{uuid.uuid4()}", scenario=scenario
+            db,
+            deps,
+            vendor,
+            payload,
+            request_id or f"sim-{uuid.uuid4()}",
+            scenario=scenario,
+            mode_override=mode_override,
         )
     except BotCallError as exc:
-        return SimulationReport(vendor.inbound_mode, False, [], exc.code, exc.message, exc.report)
+        return SimulationReport(mode, False, [], exc.code, exc.message, exc.report)
     except ApiError as exc:
-        return SimulationReport(vendor.inbound_mode, False, [], exc.code, exc.message, None)
-    return SimulationReport(vendor.inbound_mode, True, result.replies, None, None, result.report)
+        return SimulationReport(mode, False, [], exc.code, exc.message, None)
+    return SimulationReport(mode, True, result.replies, None, None, result.report)
+
+
+CONNECTION_TEST_TEXT = "Connection test from the gateway. Please answer with any reply."
+
+
+async def check_bot_connection(
+    db: AsyncSession, deps: InboundDeps, vendor: Vendor, *, request_id: str | None = None
+) -> SimulationReport:
+    """Send one signed sample request to the vendor's real bot (plan sections 7.2, 9.1)."""
+    return await simulate_incoming(
+        db,
+        deps,
+        vendor,
+        build_test_payload(text=CONNECTION_TEST_TEXT),
+        mode_override=InboundMode.FORWARD,
+        request_id=request_id,
+    )
 
 
 def report_to_dict(report: SimulationReport) -> dict[str, Any]:

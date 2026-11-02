@@ -1,4 +1,4 @@
-"""Command line tools: ``gateway create-vendor | list-vendors | rotate-key | seed``.
+"""Command line tools: ``gateway create-vendor | list-vendors | rotate-key | test-bot | seed``.
 
 Secrets (keys, bot secret) are printed to the terminal once and are never logged.
 ``simulate-incoming`` is added together with the ``/v1/ai-reply`` pipeline it calls (plan step 3).
@@ -28,7 +28,12 @@ from app.services import api_keys as key_service
 from app.services.inbound import InboundDeps
 from app.services.mock_bot import MockScenario
 from app.services.seed import seed_demo_vendors
-from app.services.simulate import build_test_payload, report_to_dict, simulate_incoming
+from app.services.simulate import (
+    build_test_payload,
+    check_bot_connection,
+    report_to_dict,
+    simulate_incoming,
+)
 from app.services.vendors import CreatedVendor, create_vendor
 
 
@@ -79,6 +84,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=MockScenario.OK.value,
         help="behaviour of the built-in bot (mock_bot mode only)",
     )
+
+    probe = sub.add_parser(
+        "test-bot", help="send one signed sample request to the vendor's real bot (pass/fail)"
+    )
+    probe.add_argument("vendor_id", type=uuid.UUID)
 
     sub.add_parser("seed", help="create the 3 demo vendors (dev/test only, safe to repeat)")
     return parser
@@ -160,6 +170,15 @@ async def _dispatch(
             scenario=MockScenario(args.scenario),
         )
         print(json.dumps(report_to_dict(report), indent=2, ensure_ascii=False))
+        if not report.ok:
+            raise SimulationFailed
+    elif args.command == "test-bot":
+        target = await vendors.get(db, args.vendor_id)
+        if target is None:
+            raise ApiError(404, "VENDOR_NOT_FOUND", "no vendor with this id")
+        report = await check_bot_connection(db, InboundDeps(settings=settings, box=box), target)
+        print(json.dumps(report_to_dict(report), indent=2, ensure_ascii=False))
+        print("PASS" if report.ok else f"FAIL: {report.error_code}")
         if not report.ok:
             raise SimulationFailed
     elif args.command == "seed":

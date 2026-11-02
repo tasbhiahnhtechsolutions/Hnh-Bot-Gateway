@@ -289,3 +289,22 @@ async def test_simulate_input_errors(
     assert "give --text and/or --file" in capsys.readouterr().err
     assert await run(["simulate-incoming", str(uuid.uuid4()), "--text", "x"], settings) == 1
     assert "VENDOR_NOT_FOUND" in capsys.readouterr().err
+
+
+async def test_test_bot_reports_fail_when_nothing_listens_and_exits_3(
+    settings: Settings, engine: AsyncEngine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    await run(["seed"], settings)
+    capsys.readouterr()
+    vid = await vendor_id_of(engine, "demo-canned")  # canned mode, bot URL localhost:9000
+    assert await run(["test-bot", vid], settings) == 3
+    out = capsys.readouterr().out
+    assert "FAIL: BOT_UNREACHABLE" in out
+    assert json.loads(out.split("\nFAIL")[0])["mode"] == "forward"
+
+
+async def test_test_bot_unknown_vendor(
+    settings: Settings, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert await run(["test-bot", str(uuid.uuid4())], settings) == 1
+    assert "VENDOR_NOT_FOUND" in capsys.readouterr().err
