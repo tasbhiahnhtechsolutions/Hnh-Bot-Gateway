@@ -5,7 +5,7 @@ import { flush, makeInjected } from './helpers.mjs';
 
 const CHAT_A = '923009990001@c.us';
 const CHAT_B = '923009990002@c.us';
-const BURST_MS = 3500;
+const BURST_MS = 7000;
 
 async function burst(page, chatId, text) {
   page.incoming(chatId, text);
@@ -187,7 +187,8 @@ test('media goes out once as base64Data, without thumbnail or preview copies', a
     size: bytes.length,
     downloadMedia: async () => bytes,
   });
-  await page.advance(BURST_MS);
+  await page.advance(100); // the download finishes within milliseconds, long before the burst wait ends
+  await page.advance(BURST_MS - 100);
 
   const media = page.requests()[0].payload.incomingMessages[0].media;
   assert.equal(media.mediaType, 'image');

@@ -230,6 +230,7 @@ async def test_the_created_live_key_works_against_the_plugin_api(make_api: MakeA
     response = await post(api, "/admin/vendors/new", csrf, **NEW_VENDOR)
     live = re.search(r"wab_live_[A-Za-z0-9_\-]+", response.text)
     assert live
+    api.numbers[live.group(0)] = NEW_VENDOR["whatsapp_number"]
     check = await api.post_reply(live.group(0))
     assert check.status_code == 200
 
@@ -368,6 +369,7 @@ async def test_rotating_and_revoking_keys(make_api: MakeApi) -> None:
     assert rotated.status_code == 200
     new_key = re.search(r"wab_live_[A-Za-z0-9_\-]+", rotated.text)
     assert new_key
+    api.numbers[new_key.group(0)] = created.vendor.phone_e164
     assert (await api.post_reply(created.secrets.live_key)).status_code in (401, 403)
     assert (await api.post_reply(new_key.group(0))).status_code == 200
     audit = [a for a in await audit_actions(api) if a.startswith("key.")]

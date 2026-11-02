@@ -334,25 +334,29 @@ async def test_request_id_is_passed_on_or_generated_and_junk_is_replaced(make_ap
     assert len(set(ids)) == 3
 
 
-async def test_wa_number_policy_warn_and_reject(make_api: MakeApi) -> None:
-    warn = await make_api()
-    created = await warn.vendor(whatsapp_number="923001234567")
-    mismatch = await warn.post_reply(
-        created.secrets.live_key, headers={"X-WA-Number": "923009999999"}
-    )
-    assert mismatch.status_code == 200  # Phase 1 default: only a warning is logged
-
-    strict = await make_api(wa_number_mismatch_policy="reject")
+async def test_wa_number_policy_is_strict_by_default(make_api: MakeApi) -> None:
+    strict = await make_api()  # no override: this is what production runs
+    assert strict.settings.wa_number_mismatch_policy == "reject"
     mine = await strict.vendor(whatsapp_number="923007654321")
     bad = await strict.post_reply(mine.secrets.live_key, headers={"X-WA-Number": "923009999999"})
     assert (bad.status_code, error_code(bad)) == (403, "NUMBER_MISMATCH")
-    missing = await strict.post_reply(mine.secrets.live_key)
+    missing = await strict.post_reply(mine.secrets.live_key, send_wa_number=False)
     assert (missing.status_code, error_code(missing)) == (403, "NUMBER_MISMATCH")
+    assert strict.bot.requests == []  # a rejected request never reaches the vendor's bot
     good = await strict.post_reply(
         mine.secrets.live_key, headers={"X-WA-Number": "+92 300 7654321"}
     )
     assert good.status_code == 200
     assert strict.bot.requests[0].headers["x-vendor-id"] == str(mine.vendor.id)
+
+
+async def test_wa_number_policy_warn_still_works_when_chosen(make_api: MakeApi) -> None:
+    lenient = await make_api(wa_number_mismatch_policy="warn")
+    created = await lenient.vendor(whatsapp_number="923001234567")
+    mismatch = await lenient.post_reply(
+        created.secrets.live_key, headers={"X-WA-Number": "923009999999"}
+    )
+    assert mismatch.status_code == 200  # only a warning is logged
 
 
 async def test_each_vendor_is_called_with_its_own_secret_and_url(make_api: MakeApi) -> None:

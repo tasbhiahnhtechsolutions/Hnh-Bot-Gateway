@@ -24,7 +24,7 @@ def test_mismatch_is_rejected_when_strict(header: str | None) -> None:
 
 
 @pytest.mark.parametrize("header", [None, "", "923009999999"])
-def test_mismatch_only_warns_by_default(header: str | None) -> None:
+def test_mismatch_only_warns_when_warn_is_chosen(header: str | None) -> None:
     check_wa_number(VENDOR, header, "warn")
 
 

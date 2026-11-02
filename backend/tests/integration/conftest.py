@@ -4,7 +4,7 @@ import json
 import os
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -119,6 +119,9 @@ class Api:
     settings: Settings
     box: SecretBox
     bot: FakeBot
+    # API key -> the vendor's WhatsApp number. post_reply sends it as X-WA-Number like the real
+    # plugin does, because the gateway rejects a missing or wrong number by default.
+    numbers: dict[str, str] = field(default_factory=dict)
 
     async def vendor(self, **fields: object) -> CreatedVendor:
         values: dict[str, object] = {
@@ -136,6 +139,8 @@ class Api:
                 allow_private_bot_urls=True,
             )
             await db.commit()
+        self.numbers[created.secrets.live_key] = created.vendor.phone_e164
+        self.numbers[created.secrets.test_key] = created.vendor.phone_e164
         return created
 
     async def post_reply(
@@ -143,9 +148,13 @@ class Api:
         key: str,
         body: dict[str, Any] | bytes | None = None,
         headers: dict[str, str] | None = None,
+        send_wa_number: bool = True,
     ) -> httpx.Response:
         content = body if isinstance(body, bytes) else json.dumps(body or REQUEST_BODY).encode()
-        all_headers = {"X-API-Key": key, "Content-Type": "application/json", **(headers or {})}
+        all_headers = {"X-API-Key": key, "Content-Type": "application/json"}
+        if send_wa_number and key in self.numbers:
+            all_headers["X-WA-Number"] = self.numbers[key]
+        all_headers.update(headers or {})
         return await self.client.post("/v1/ai-reply", content=content, headers=all_headers)
 
 

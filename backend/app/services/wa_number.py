@@ -17,7 +17,7 @@ def digits_only(value: str | None) -> str:
 def check_wa_number(
     vendor: Vendor, header_value: str | None, policy: Literal["warn", "reject"]
 ) -> None:
-    """``warn`` logs a mismatch (Phase 1 default); ``reject`` answers 403 NUMBER_MISMATCH."""
+    """``reject`` (default) answers 403 NUMBER_MISMATCH; ``warn`` only logs a mismatch."""
     if digits_only(header_value) == vendor.phone_e164:
         return
     if policy == "reject":

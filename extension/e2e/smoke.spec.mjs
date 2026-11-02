@@ -16,7 +16,7 @@ const FAKE_SCRIPT = fs.readFileSync(path.join(here, 'fake-whatsapp.js'), 'utf8')
 
 const CANNED = { business: 'demo-canned', me: '923009990001' };
 const ECHO = { business: 'demo-echo', me: '923009990002' };
-const BURST_QUIET_MS = 3500; // BURST_WAIT_MS in injected.js
+const BURST_QUIET_MS = 7000; // BURST_WAIT_MS in injected.js
 const SILENCE_MS = BURST_QUIET_MS + 3000; // long enough to be sure nothing is coming
 
 const openContexts = [];

@@ -22,7 +22,7 @@
   const seenMsgIds = new Set();
 
   // Quiet time after the last customer message before a burst is sent to the gateway.
-  const BURST_WAIT_MS = 3500;
+  const BURST_WAIT_MS = 7000;
 
   // Loop guard: texts this script just sent, remembered per chat for a short time.
   // Keyed by "chatId|text" so a reply in one chat never hides the same words from

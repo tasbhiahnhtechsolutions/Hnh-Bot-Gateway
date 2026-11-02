@@ -41,8 +41,9 @@ class Settings(BaseSettings):
     bot_timeout_seconds: float = 30.0
     mock_bot_slow_seconds: float = 40.0
 
-    # Plan section 16, point 2: "warn" in Phase 1, "reject" (strict) from Phase 2.
-    wa_number_mismatch_policy: Literal["warn", "reject"] = "warn"
+    # Plan section 16, point 2: strict by default. A request whose X-WA-Number is missing or is
+    # not the vendor's registered number gets 403 NUMBER_MISMATCH. "warn" only logs it (debugging).
+    wa_number_mismatch_policy: Literal["warn", "reject"] = "reject"
 
     # Admin panel (plan section 9.3). Comma-separated IPs/CIDRs; empty means any address.
     # The address is the one the app sees, so behind a proxy it must forward the real IP.

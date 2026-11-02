@@ -1157,7 +1157,8 @@ Page band karne ke baad ye values dobara nahi dikhengi (sirf rotate kar sakte ha
 - **`waState` Phase 1 mein nahi banaya.** Connection-state ka signal abhi verify nahi hua (Phase 2 Spike, section 11). Phase 1 popup mein WhatsApp line bhi nahi hai. Spike ke baad Phase 2 mein aayega.
 - Control ek hi flag hai: background `active = key hai + pause nahi + toggle on` nikal kar tabs ko bhejta hai. "Log Messages" toggle hata diya. Group messages ko plugin ignore karta hai, kahin bhejta nahi.
 - Stale rule: ek chat ke liye sirf aakhri request ka jawab bheja jata hai (naya burst chala gaya to purana jawab drop), ek jawab sirf ek baar, aur 90 second se purana jawab drop. Naye request ki `chatHistory` mein pehle ke messages hote hain.
-- Burst wait abhi bhi code mein **3.5 second** hai (`BURST_WAIT_MS`), jabke is plan aur `ai-contract.md` mein 7 second likha hai. Behavior badla nahi; faisla user ka (neeche summary mein pucha gaya).
+- **Burst wait 7 second hai** (`BURST_WAIT_MS = 7000` in `injected.js`), plan aur `ai-contract.md` ke mutabiq. (Pehle code mein 3.5s tha; user ke faisle se 7s kiya.) Ek chat mein aakhri message ke 7s baad request jati hai.
+- **`WA_NUMBER_MISMATCH_POLICY` default `reject`** (pehle `warn`). User ke faisle se badla. Is liye plugin ko apna WhatsApp number (`X-WA-Number`) bhejna zaroori hai: agar plugin number nahi padh paya to `/ai-reply` 403 `NUMBER_MISMATCH` dega aur popup mein pause dikhega. Tests ke helper `post_reply` ab vendor ka number khud bhejta hai, jaise asli plugin.
 
 **Code changes (Phase 2):**
 - `background.js` ES module, `extension/vendor/socket.io.esm.min.js` bundle.
@@ -1488,7 +1489,7 @@ Computer khud hazaron random sequences banata hai: `api_post_job`, `plugin_conne
 ## 16. Khuli baatein (confirm karni hain) aur maine kya default rakha hai
 
 1. **Ek key = ek number** (default: haan).
-2. `X-WA-Number` mismatch par **strict reject** (default: Phase 1 mein warning, Phase 2 mein strict).
+2. `X-WA-Number` mismatch par **strict reject**. **Faisla ho gaya:** default ab `reject` hai (`WA_NUMBER_MISMATCH_POLICY=reject`); header na ho ya number vendor ka na ho to 403 `NUMBER_MISMATCH`, bot ko call nahi jati. `warn` sirf local debugging ke liye opt-in hai.
 3. `Idempotency-Key` **otp ke liye zaroori**, baaki ke liye recommended (default).
 4. Marketing default daily cap **200**, admin se per vendor change.
 5. TTL defaults: otp 300, transactional 3600, marketing 86400. Clamp 30 se 86400.
