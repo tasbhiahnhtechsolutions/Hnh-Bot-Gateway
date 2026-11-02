@@ -48,3 +48,18 @@ async def touch_last_used(db: AsyncSession, key_id: uuid.UUID) -> None:
     await db.execute(
         update(ApiKey).where(ApiKey.id == key_id).values(last_used_at=datetime.now(UTC))
     )
+
+
+async def revoke_all_active(db: AsyncSession, vendor_id: uuid.UUID, kind: str) -> int:
+    """Revoke every active key of one kind for a vendor. Returns how many were revoked."""
+    result = await db.execute(
+        update(ApiKey)
+        .where(
+            ApiKey.vendor_id == vendor_id,
+            ApiKey.kind == kind,
+            ApiKey.status == ApiKeyStatus.ACTIVE.value,
+        )
+        .values(status=ApiKeyStatus.REVOKED.value, revoked_at=datetime.now(UTC))
+        .returning(ApiKey.id)
+    )
+    return len(result.all())

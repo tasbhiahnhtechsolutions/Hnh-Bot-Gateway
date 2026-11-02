@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator, Iterator
 import pytest
 from alembic import command
 from alembic.config import Config
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -65,3 +66,16 @@ async def db(engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
         async with factory() as session:
             yield session
         await trans.rollback()
+
+
+@pytest.fixture
+async def clean_db(engine: AsyncEngine) -> AsyncIterator[None]:
+    """For tests that really commit (services, CLI). Empties the tables before and after."""
+
+    async def wipe() -> None:
+        async with engine.begin() as conn:
+            await conn.execute(text("TRUNCATE vendors CASCADE"))
+
+    await wipe()
+    yield
+    await wipe()

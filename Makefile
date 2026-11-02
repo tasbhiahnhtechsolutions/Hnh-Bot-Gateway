@@ -1,10 +1,10 @@
-.PHONY: help up down logs build migrate lint format typecheck test test-unit key
+.PHONY: help up down logs migrate seed gateway lint format typecheck test test-unit
 
 COMPOSE ?= docker compose
 BACKEND := cd backend &&
 
 help:
-	@echo "make up | down | logs | migrate | lint | format | typecheck | test | test-unit | key"
+	@echo "make up | down | logs | migrate | seed | gateway ARGS=... | lint | format | typecheck | test | test-unit"
 
 .env:
 	@cp .env.example .env
@@ -21,8 +21,16 @@ down:
 logs:
 	$(COMPOSE) logs -f api
 
+# These run inside the api container, so they use the compose database.
 migrate:
-	$(BACKEND) uv run alembic upgrade head
+	$(COMPOSE) exec api alembic upgrade head
+
+seed:
+	$(COMPOSE) exec api gateway seed
+
+# Example: make gateway ARGS="create-vendor --name Ali --number 923001234567 --email a@b.com --bot-url http://localhost:9000"
+gateway:
+	$(COMPOSE) exec api gateway $(ARGS)
 
 lint:
 	$(BACKEND) uv run ruff check . && uv run ruff format --check .

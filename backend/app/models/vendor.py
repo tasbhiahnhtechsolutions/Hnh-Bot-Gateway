@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import CheckConstraint, DateTime, Integer, String, Text, func, text
+from sqlalchemy import CheckConstraint, DateTime, Index, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -41,6 +41,14 @@ class Vendor(Base):
         CheckConstraint(_in_list("inbound_mode", InboundMode), name="inbound_mode_valid"),
         CheckConstraint(_in_list("outbound_mode", OutboundMode), name="outbound_mode_valid"),
         CheckConstraint("marketing_daily_cap >= 0", name="marketing_daily_cap_non_negative"),
+        # Plan section 9.1: one number = one live vendor. The database enforces it, so two
+        # admins creating the same vendor at the same moment cannot both win.
+        Index(
+            "uq_vendors_active_phone",
+            "phone_e164",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

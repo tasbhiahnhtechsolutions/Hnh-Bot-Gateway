@@ -18,6 +18,8 @@ Source of truth: `VENDOR_GATEWAY_PLAN.md`. Vendor contract: `ai-contract.md`.
 ```bash
 make up                  # creates .env (fresh SECRET_ENCRYPTION_KEY), builds, runs migrations
 curl localhost:8000/ready
+make seed                # 3 demo vendors (demo-canned, demo-echo, demo-mockbot); keys printed once
+make gateway ARGS=list-vendors
 make test                # needs Docker (testcontainers)
 make lint typecheck
 ```
