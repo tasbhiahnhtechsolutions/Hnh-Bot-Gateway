@@ -126,6 +126,7 @@ Database khud kehta hai "ek vendor ki ek hi job ek waqt mein 'bheji ja rahi' ho 
 1. Ek key = ek WhatsApp number = ek Chrome profile. Ek vendor ke 2 numbers = 2 live keys.
 2. Phase 1 mein dashboard/logging/contacts/poll sab band. Sirf inbound auto-reply.
 3. Purana `server/` (Sara bot) sirf ek sample vendor bot hai. Naya project `Turabees-Whatsapp-Bot/backend/` mein banega.
+   **Update (location):** Naya kaam `Turabees Whatsapp Bot V2/whatsup-plugin/` mein hai (`backend/`, `reference-bot/`, aur extension ki nayi copy `extension/`). Purana `Turabees-Whatsapp-Bot/` (Node.js) bilkul nahi chheda jata. Section 10 mein `Turabees-Whatsapp-Bot/extension/...` ke paths ab V2 wali `extension/` copy ke liye parhein.
 4. Redis available hoga (Celery broker + Socket.IO manager + presence + pacing time + daily counter).
 5. Plugin sirf **text** bhej sakta hai. Real tappable buttons, OTP copy-code buttons, image reply abhi scope mein nahi (section 12.D).
 6. Outbound simple: `number`, `message`, `type`, `ttlSeconds`. Plugin sirf forward karta hai.
