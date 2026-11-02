@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Create vendor{% endblock %}
+{% block content %}
+<h1>Create vendor</h1>
+<div class="card">
+<form method="post" action="/admin/vendors/new" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf }}">
+  <div class="row">
+    <div><label for="business_name">Business name *</label>
+      <input id="business_name" type="text" name="business_name" value="{{ v.get('business_name', '') }}" required maxlength="200"></div>
+    <div><label for="whatsapp_number">WhatsApp number *</label>
+      <input id="whatsapp_number" type="text" name="whatsapp_number" value="{{ v.get('whatsapp_number', '') }}" required placeholder="923001234567">
+      <div class="hint">Digits with country code. The plugin must run on this number.</div></div>
+  </div>
+  <div class="row">
+    <div><label for="email">Email *</label>
+      <input id="email" type="email" name="email" value="{{ v.get('email', '') }}" required></div>
+    <div><label for="bot_base_url">Bot base URL *</label>
+      <input id="bot_base_url" type="text" name="bot_base_url" value="{{ v.get('bot_base_url', '') }}" required placeholder="https://bot.vendor.com">
+      <div class="hint">After creating, use "Test bot connection" on the vendor page.</div></div>
+  </div>
+  <div class="row">
+    <div><label for="status_webhook_url">Status webhook URL</label>
+      <input id="status_webhook_url" type="text" name="status_webhook_url" value="{{ v.get('status_webhook_url', '') }}"></div>
+    <div><label for="default_country_code">Default country code</label>
+      <input id="default_country_code" type="text" name="default_country_code" value="{{ v.get('default_country_code', '92') }}"></div>
+    <div><label for="marketing_daily_cap">Marketing daily cap</label>
+      <input id="marketing_daily_cap" type="number" min="0" name="marketing_daily_cap" value="{{ v.get('marketing_daily_cap', '200') }}"></div>
+  </div>
+  <div class="row">
+    <div><label for="inbound_mode">Inbound mode</label>
+      <select id="inbound_mode" name="inbound_mode">
+        {% for m in inbound_modes if m.value != 'mock_bot' or enable_mock_bot %}
+        <option value="{{ m.value }}" {{ 'selected' if v.get('inbound_mode', 'forward') == m.value }}>{{ m.value }}</option>
+        {% endfor %}
+      </select>
+      <div class="hint">forward = call the vendor's bot. For testing use canned, echo or mock_bot.</div></div>
+    <div><label for="outbound_mode">Outbound mode</label>
+      <select id="outbound_mode" name="outbound_mode">
+        {% for m in outbound_modes %}
+        <option value="{{ m.value }}" {{ 'selected' if v.get('outbound_mode', 'real_plugin') == m.value }}>{{ m.value }}</option>
+        {% endfor %}
+      </select></div>
+  </div>
+  <label for="internal_note">Internal note (admins only)</label>
+  <textarea id="internal_note" name="internal_note">{{ v.get('internal_note', '') }}</textarea>
+  <p><button type="submit">Create vendor</button> <a class="btn secondary" href="/admin/vendors">Cancel</a></p>
+</form>
+</div>
+{% endblock %}

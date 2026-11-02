@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Audit log{% endblock %}
+{% block content %}
+<h1>Audit log</h1>
+<div class="card">
+<table>
+  <tr><th>Time</th><th>Admin</th><th>Action</th><th>Target</th></tr>
+  {% for entry, email in entries %}
+  <tr><td>{{ entry.created_at|dt }}</td><td>{{ email or '(deleted)' }}</td><td class="mono">{{ entry.action }}</td><td class="mono">{{ entry.target or '' }}</td></tr>
+  {% else %}
+  <tr><td colspan="4" class="hint">Nothing yet.</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}

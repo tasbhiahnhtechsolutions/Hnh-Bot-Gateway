@@ -87,7 +87,7 @@ async def clean_db(engine: AsyncEngine) -> AsyncIterator[None]:
 
     async def wipe() -> None:
         async with engine.begin() as conn:
-            await conn.execute(text("TRUNCATE vendors CASCADE"))
+            await conn.execute(text("TRUNCATE vendors, admins CASCADE"))
 
     await wipe()
     yield

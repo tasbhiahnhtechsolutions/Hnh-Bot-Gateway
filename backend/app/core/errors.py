@@ -33,7 +33,7 @@ def error_response(
     )
 
 
-def _api_error_handler(_request: Request, exc: Exception) -> JSONResponse:
+def api_error_handler(_request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, ApiError)
     return error_response(exc.status_code, exc.code, exc.message, exc.headers)
 
@@ -45,7 +45,7 @@ def _validation_handler(_request: Request, exc: Exception) -> JSONResponse:
     return error_response(400, "INVALID_REQUEST", "; ".join(problems))
 
 
-def _http_handler(_request: Request, exc: Exception) -> JSONResponse:
+def http_error_handler(_request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, StarletteHTTPException)
     code = _HTTP_CODES.get(exc.status_code, "HTTP_ERROR")
     return error_response(exc.status_code, code, str(exc.detail), dict(exc.headers or {}))
@@ -56,7 +56,7 @@ def _unhandled_handler(_request: Request, _exc: Exception) -> JSONResponse:
 
 
 def register_error_handlers(app: FastAPI) -> None:
-    app.add_exception_handler(ApiError, _api_error_handler)
+    app.add_exception_handler(ApiError, api_error_handler)
     app.add_exception_handler(RequestValidationError, _validation_handler)
-    app.add_exception_handler(StarletteHTTPException, _http_handler)
+    app.add_exception_handler(StarletteHTTPException, http_error_handler)
     app.add_exception_handler(Exception, _unhandled_handler)

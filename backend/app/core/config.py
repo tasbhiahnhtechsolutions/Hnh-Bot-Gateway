@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     # Plan section 16, point 2: "warn" in Phase 1, "reject" (strict) from Phase 2.
     wa_number_mismatch_policy: Literal["warn", "reject"] = "warn"
 
+    # Admin panel (plan section 9.3). Comma-separated IPs/CIDRs; empty means any address.
+    # The address is the one the app sees, so behind a proxy it must forward the real IP.
+    admin_ip_allowlist: str = ""
+    admin_session_hours: int = Field(default=8, ge=1, le=72)
+
     # Wrong-key attempts allowed per client IP per minute (plan section 4).
     auth_fail_limit_per_minute: int = 20
 
@@ -62,6 +67,11 @@ class Settings(BaseSettings):
                 "SECRET_ENCRYPTION_KEY is required (generate with Fernet.generate_key)"
             )
         return self
+
+    @property
+    def admin_cookie_secure(self) -> bool:
+        """Admin cookies are Secure everywhere except local dev/test over plain http."""
+        return self.app_env in (AppEnv.STAGING, AppEnv.PROD)
 
 
 @lru_cache

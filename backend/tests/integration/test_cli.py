@@ -10,8 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.cli import run
 from app.core.config import AppEnv, Settings
+from app.core.passwords import verify_password
 from app.core.security import KeyKind, parse_api_key
-from app.repositories import api_keys, vendors
+from app.repositories import admins, api_keys, vendors
 
 pytestmark = pytest.mark.usefixtures("clean_db")
 
@@ -308,3 +309,76 @@ async def test_test_bot_unknown_vendor(
 ) -> None:
     assert await run(["test-bot", str(uuid.uuid4())], settings) == 1
     assert "VENDOR_NOT_FOUND" in capsys.readouterr().err
+
+
+# --- create-admin ----------------------------------------------------------------------------
+
+
+async def test_create_admin_with_a_generated_password_prints_it_once(
+    settings: Settings, engine: AsyncEngine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code = await run(["create-admin", "--email", "Ops@Example.com", "--generate"], settings)
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "Admin created: ops@example.com (superadmin)" in out
+    password = out.strip().splitlines()[-1].strip()
+    assert len(password) >= 12
+    async with await one_session(engine) as db:
+        admin = await admins.get_by_email(db, "ops@example.com")
+    assert admin is not None
+    assert password not in admin.password_hash
+    assert verify_password(admin.password_hash, password)
+
+
+async def test_create_admin_asks_for_the_password_and_checks_it(
+    settings: Settings,
+    engine: AsyncEngine,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    answers = iter(["a long enough password", "a different password!!"])
+    monkeypatch.setattr("app.cli.getpass.getpass", lambda _prompt: next(answers))
+    assert (
+        await run(["create-admin", "--email", "x@example.com", "--role", "support"], settings) == 1
+    )
+    assert "differ" in capsys.readouterr().err
+
+    answers = iter(["a long enough password"] * 2)
+    assert (
+        await run(["create-admin", "--email", "x@example.com", "--role", "support"], settings) == 0
+    )
+    out = capsys.readouterr().out
+    assert "(support)" in out
+    assert "a long enough password" not in out
+
+
+async def test_create_admin_rejects_short_passwords_and_duplicates(
+    settings: Settings,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("app.cli.getpass.getpass", lambda _prompt: "short")
+    assert await run(["create-admin", "--email", "x@example.com"], settings) == 1
+    assert "at least 12" in capsys.readouterr().err
+
+    assert await run(["create-admin", "--email", "x@example.com", "--generate"], settings) == 0
+    assert await run(["create-admin", "--email", "X@example.com", "--generate"], settings) == 1
+    assert "ADMIN_EXISTS" in capsys.readouterr().err
+
+
+async def test_seed_creates_a_dev_admin_once(
+    settings: Settings, engine: AsyncEngine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert await run(["seed"], settings) == 0
+    first = capsys.readouterr().out
+    assert "Dev admin created: admin@example.com" in first
+    password = re.search(r"Password \(shown ONCE\): (\S+)", first)
+    assert password
+    async with await one_session(engine) as db:
+        admin = await admins.get_by_email(db, "admin@example.com")
+    assert admin is not None
+    assert admin.role == "superadmin"
+    assert verify_password(admin.password_hash, password.group(1))
+
+    assert await run(["seed"], settings) == 0
+    assert "Dev admin" not in capsys.readouterr().out

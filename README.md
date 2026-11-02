@@ -40,6 +40,20 @@ Inbound modes: `forward`, `canned`, `echo`, `mock_bot`, `paused`. Bot failures a
 
 Host ports: API `8000`, Postgres `5433`, Redis `6380` (so they do not clash with local installs).
 
+## Admin panel and Test Lab (Phase 1B, step 5)
+
+```bash
+make seed                      # also prints a dev admin (admin@example.com) password, once
+make gateway ARGS="create-admin --email you@example.com --generate"   # real admins
+```
+
+Open http://localhost:8000/admin. Pages: dashboard, vendors, create vendor (keys shown once),
+vendor detail (modes, suspend, rotate/revoke keys, canned rules, recent requests), Test Lab
+(text/file simulation, optional real bot), bot connection test, request logs, audit log.
+No JavaScript, no CDN. Roles: `superadmin` (everything) and `support` (view + Test Lab).
+`ADMIN_IP_ALLOWLIST` restricts the panel to given IPs/CIDRs. Sandbox for vendor developers:
+`POST /v1/sandbox/simulate-incoming` with a TEST key.
+
 ## Chrome extension (Phase 1, step 4)
 
 ```bash

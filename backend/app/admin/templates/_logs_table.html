@@ -1,0 +1,16 @@
+<table>
+  <tr><th>Time</th>{% if names %}<th>Vendor</th>{% endif %}<th>Kind</th><th>Mode</th><th>Status</th><th>Error</th><th>Latency</th><th>Request id</th></tr>
+  {% for r in logs %}
+  <tr>
+    <td>{{ r.created_at|dt }}</td>
+    {% if names %}<td>{{ names.get(r.vendor_id, '?') }}</td>{% endif %}
+    <td>{{ r.kind }}</td><td>{{ r.mode or '-' }}</td>
+    <td><span class="badge {{ 'ok' if r.status == 'ok' else 'bad' }}">{{ r.status }}</span></td>
+    <td class="mono">{{ r.error_code or '' }}</td>
+    <td>{{ r.latency_ms }} ms</td>
+    <td class="mono">{{ r.request_id }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="8" class="hint">No requests yet.</td></tr>
+  {% endfor %}
+</table>

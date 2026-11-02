@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Log in{% endblock %}
+{% block content %}
+<div class="login card">
+  <h1>Admin login</h1>
+  <form method="post" action="/admin/login" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <label for="email">Email</label>
+    <input id="email" type="email" name="email" required autofocus>
+    <label for="password">Password</label>
+    <input id="password" type="password" name="password" required>
+    <p><button type="submit">Log in</button></p>
+  </form>
+</div>
+{% endblock %}

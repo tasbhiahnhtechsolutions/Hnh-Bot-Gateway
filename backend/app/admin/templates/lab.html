@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Test Lab{% endblock %}
+{% block content %}
+<h1>Test Lab: {{ vendor.business_name }}</h1>
+<div class="card">
+  <p>Runs the same pipeline as a real plugin request, without WhatsApp. Current inbound mode:
+  <span class="badge">{{ vendor.inbound_mode }}</span></p>
+  <form method="post" action="/admin/vendors/{{ vendor.id }}/lab/simulate" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <label for="text">Message text</label>
+    <textarea id="text" name="text" placeholder="Red lehenga available hai?"></textarea>
+    <div class="row">
+      <div><label for="file">Attach a file (image, audio, PDF; up to 16 MB)</label><input id="file" type="file" name="file"></div>
+      <div><label for="media_type">Media type</label>
+        <select id="media_type" name="media_type"><option value="">auto</option>{% for t in media_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}</select></div>
+      <div><label for="scenario">Built-in bot scenario</label>
+        <select id="scenario" name="scenario">{% for s in scenarios %}<option value="{{ s }}">{{ s }}</option>{% endfor %}</select>
+        <div class="hint">Only used when the mode is mock_bot.</div></div>
+    </div>
+    <p><input id="use_real_bot" type="checkbox" name="use_real_bot"> <label class="inline" for="use_real_bot">Call the vendor's real bot ({{ vendor.bot_base_url or 'no URL' }}) instead of the current mode</label></p>
+    <button type="submit">Send</button>
+  </form>
+</div>
+<p><a class="btn secondary" href="/admin/vendors/{{ vendor.id }}">Back to the vendor</a></p>
+{% endblock %}

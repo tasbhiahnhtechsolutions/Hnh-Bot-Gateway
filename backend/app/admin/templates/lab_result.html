@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<h1>{{ title }}: {{ vendor.business_name }}</h1>
+<div class="card">
+  <p><span class="badge {{ 'ok' if report.ok else 'bad' }}">{{ 'PASS' if report.ok else 'FAIL' }}</span>
+  mode <b>{{ report.mode }}</b>
+  {% if report.errorCode %} &middot; <span class="mono">{{ report.errorCode }}</span>: {{ report.errorMessage }}{% endif %}</p>
+  <h2>Replies ({{ report.replies|length }})</h2>
+  {% for reply in report.replies %}<pre>{{ reply }}</pre>{% else %}<p class="hint">No replies (silence).</p>{% endfor %}
+</div>
+{% if report.bot %}
+<div class="card">
+  <h2>Request to the bot</h2>
+  <table>
+    <tr><th>URL</th><td class="mono">{{ report.bot.url }}</td></tr>
+    <tr><th>Bot answered</th><td>{{ report.bot.responseStatus if report.bot.responseStatus is not none else 'no answer' }}</td></tr>
+    <tr><th>Latency</th><td>{{ report.bot.latencyMs }} ms</td></tr>
+    <tr><th>Request size</th><td>{{ report.bot.requestBytes }} bytes</td></tr>
+  </table>
+  {% if report.bot.validationErrors %}
+  <h2>Validation errors</h2>
+  <div class="error">{% for e in report.bot.validationErrors %}<div>{{ e }}</div>{% endfor %}</div>
+  {% endif %}
+  <h2>Headers sent (signature and timestamp)</h2>
+  <pre>{{ report.bot.requestHeaders|pretty }}</pre>
+  <h2>Body sent (file contents redacted)</h2>
+  <pre>{{ report.bot.request|pretty }}</pre>
+  <h2>Bot response (first 2000 characters)</h2>
+  <pre>{{ report.bot.responseExcerpt if report.bot.responseExcerpt is not none else '(nothing)' }}</pre>
+</div>
+{% endif %}
+<p><a class="btn secondary" href="/admin/vendors/{{ vendor.id }}/lab">Another test</a>
+<a class="btn secondary" href="/admin/vendors/{{ vendor.id }}">Back to the vendor</a></p>
+{% endblock %}

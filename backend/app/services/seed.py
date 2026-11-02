@@ -1,5 +1,6 @@
-"""Demo vendors for local development (plan section 3.2: ``make seed``)."""
+"""Demo vendors and a dev admin for local development (plan section 3.2: ``make seed``)."""
 
+import secrets
 from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,11 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import ApiError
 from app.core.security import SecretBox
 from app.models import CannedMatchType, CannedRule, InboundMode
-from app.repositories import canned_rules, vendors
+from app.models.admin import AdminRole
+from app.repositories import admins, canned_rules, vendors
 from app.schemas.vendor import VendorCreate
+from app.services.admins import create_admin
 from app.services.vendors import CreatedVendor, create_vendor
 
 MOCK_BOT_URL = "http://localhost:9000"
+DEV_ADMIN_EMAIL = "admin@example.com"
 
 DEMO_VENDORS: tuple[VendorCreate, ...] = (
     VendorCreate(
@@ -54,6 +58,8 @@ CANNED_DEMO_RULES: tuple[tuple[int, CannedMatchType, str, str], ...] = (
 class SeedResult:
     created: list[CreatedVendor]
     skipped: list[str]  # business names that already existed
+    admin_email: str | None = None  # set only when the dev admin was created now
+    admin_password: str | None = None  # random, shown once, never stored in clear
 
 
 async def seed_demo_vendors(
@@ -82,4 +88,15 @@ async def seed_demo_vendors(
                 )
                 await canned_rules.add(db, rule)
         created.append(made)
-    return SeedResult(created=created, skipped=skipped)
+    admin_password: str | None = None
+    if await admins.get_by_email(db, DEV_ADMIN_EMAIL) is None:
+        admin_password = secrets.token_urlsafe(18)
+        await create_admin(
+            db, email=DEV_ADMIN_EMAIL, password=admin_password, role=AdminRole.SUPERADMIN
+        )
+    return SeedResult(
+        created=created,
+        skipped=skipped,
+        admin_email=DEV_ADMIN_EMAIL if admin_password else None,
+        admin_password=admin_password,
+    )

@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+<div class="stats">
+  <div class="card stat"><b>{{ total }}</b>vendors ({{ active }} active)</div>
+  <div class="card stat"><b>{{ counts.ok }}</b>requests ok, last 24 h</div>
+  <div class="card stat"><b>{{ counts.error }}</b>requests with an error, last 24 h</div>
+</div>
+<div class="card">
+  <p><a class="btn" href="/admin/vendors">Vendors</a>
+  <a class="btn secondary" href="/admin/logs">Request logs</a></p>
+</div>
+{% endblock %}

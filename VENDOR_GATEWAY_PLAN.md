@@ -379,9 +379,9 @@ outbound_jobs(
   available_at, ttl_expires_at, lease_expires_at,
   sent_at, wa_ack smallint, error_code, created_at)
 webhook_deliveries(id, vendor_id, event_id, event, payload, status, attempts, next_attempt_at)
-request_logs(id, vendor_id, request_id, kind, status, latency_ms, error_code, created_at)  -- body NAHI
-admins(id, email, password_hash, role, totp_secret_enc)
-audit_log(id, admin_id, action, target, created_at)
+request_logs(id, vendor_id, request_id, kind, mode, status, latency_ms, error_code, created_at)  -- body NAHI (Phase 1B mein bana, `mode` column jod diya)
+admins(id, email, password_hash, role, is_active, created_at, last_login_at)  -- Phase 1B mein bana; `totp_secret_enc` 2FA ke saath Phase 2 mein
+audit_log(id, admin_id, action, target, created_at)  -- Phase 1B mein bana
 
 -- Phase 3 (baad mein, abhi nahi banana):
 -- message_templates, reply_contexts, suppressions (STOP/opt-out)
@@ -1090,6 +1090,19 @@ Page band karne ke baad ye values dobara nahi dikhengi (sirf rotate kar sakte ha
 - JS libraries (htmx) apni static files se, CDN nahi.
 - IP allowlist (production mein admin sirf office/VPN IP se).
 
+**Step 5 mein asal mein kya hua (V2 `backend/app/admin/`):**
+- `admins` aur `audit_log` tables Phase 2 se Phase 1B mein aa gaye (migrations `0004_request_logs`, `0005_admins_and_audit_log`), kyun ke login ke liye chahiye. `request_logs` mein plan se ek extra column `mode` hai (forward/canned/echo...), taake Lab/sandbox ke run alag pehchane jayen.
+- Admin panel server-rendered Jinja2 hai, **koi JS nahi, koi CDN nahi** (htmx Phase 2 ke live-device pages ke saath, apni static file se). CSP: `default-src 'none'; style-src 'self'; script-src 'self'; form-action 'self'; frame-ancestors 'none'`; `Cache-Control: no-store`.
+- Login: argon2id, server-side Redis session (cookie mein sirf random id: HttpOnly, SameSite=Strict, Secure staging/prod mein), login form par double-submit CSRF cookie, baqi har form par session ka CSRF token, 5 galat password per account / 20 per IP (15 min) ke baad lockout. Galat email aur galat password ka jawab ek jaisa. Redis down ho to login band (fail closed).
+- `ADMIN_IP_ALLOWLIST` (comma-separated IP/CIDR, khali = sab). staging/prod mein khali ho to startup par warning aati hai. Reverse proxy ke peeche asli client IP forward karna zaroori hai.
+- Roles: `superadmin` sab kuch; `support` sirf dekhna + Test Lab + bot connection test (create/modes/suspend/keys/rules par 403).
+- Audit mein sirf action aur target (e.g. `vendor:<id> inbound forward->echo`); keys, secrets, passwords, message text kabhi nahi.
+- Modes: forward se bahar jane par "I understand" checkbox zaroori (asli customers ko bot ka jawab nahi milega). `mock_bot` wahan refuse hota hai jahan `ENABLE_MOCK_BOT=false`.
+- Test Lab: text + file upload (16 MB tak), "asli bot call karo" checkbox (warna vendor ka current mode), mock_bot scenario. Result page par request/response, headers (signature), validation errors, latency. Lab/bot-test ke run `request_logs` mein jate hain (sirf metadata). Sandbox API (`/v1/sandbox/simulate-incoming`, sirf test key) hamesha vendor ka asli bot call karta hai.
+- "Test bot connection" create form par nahi, vendor page par hai (secret create ke baad hi banta hai).
+- Admin banane ke liye: `gateway create-admin --email ... [--role support] [--generate]` (password argument kabhi nahi; prompt ya `--generate`); `make seed` dev admin `admin@example.com` bhi banata hai (random password, ek baar print).
+- Abhi nahi (Phase 2): TOTP 2FA, devices/jobs/webhook pages, daily-cap edit, admin password change/reset, admin users ka UI.
+
 ---
 
 ## 10. Plugin ka UI (popup)
@@ -1434,13 +1447,13 @@ Computer khud hazaron random sequences banata hai: `api_post_job`, `plugin_conne
 - [x] P1: CLI (create-vendor, rotate-key, list-vendors) + seed
 - [x] P1: CLI simulate-incoming (built together with the `/v1/ai-reply` pipeline)
 - [x] P1: `/v1/plugin/whoami`, `/v1/ai-reply` (modes, SSRF, signature), health endpoints
-- [ ] P1B: Test Lab (canned, echo, mock_bot, paused, simulate-incoming, request logs, bot connection test)
-- [ ] P1B: admin shell (login, vendors list, create vendor with onboarding fields + show-once keys, mode toggles)
+- [x] P1B: Test Lab (canned, echo, mock_bot, paused, simulate-incoming, request logs, bot connection test)
+- [x] P1B: admin shell (login, vendors list, create vendor with onboarding fields + show-once keys, mode toggles)
 - [x] P1: plugin (popup API key + whoami, config.js + build script, background, injected fixes, manifest)
 - [ ] P1: vendor kit (contract doc + FastAPI reference bot with signature verify, section 7.5)
 - [ ] P1: tests (unit, API integration, sandbox modes, signature cross-language, Playwright smoke, 2-profile routing)
 - [ ] P2 spike: new chat send, connection state, ack level, LID mapping, buttons feasibility
-- [ ] P2: migrations (outbound_jobs, devices, webhooks, admins, audit) + one_inflight index
+- [ ] P2: migrations (outbound_jobs, devices, webhooks) + one_inflight index (`admins`, `audit_log` Phase 1B mein ban chuke)
 - [ ] P2: `/v1/message-to-customer` (number, message, type, ttlSeconds, Idempotency-Key, daily cap) + status GET
 - [ ] P2: Socket.IO hub + presence (same-device takeover)
 - [ ] P2: Celery (dispatch_next, Redis pace keys, wake alarm, beat sweepers, webhook delivery, virtual plugin)

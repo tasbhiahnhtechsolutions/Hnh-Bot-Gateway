@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}{{ vendor.business_name }}{% endblock %}
+{% block content %}
+<div class="row">
+  <div><h1>{{ vendor.business_name }} <span class="badge {{ 'ok' if vendor.status == 'active' else 'bad' }}">{{ vendor.status }}</span></h1></div>
+  <div style="text-align:right">
+    <a class="btn" href="/admin/vendors/{{ vendor.id }}/lab">Test Lab</a>
+    <a class="btn secondary" href="/admin/logs?vendor_id={{ vendor.id }}">All logs</a>
+  </div>
+</div>
+
+<div class="card">
+  <table>
+    <tr><th>WhatsApp number</th><td class="mono">{{ vendor.phone_e164|phone }}</td></tr>
+    <tr><th>Email</th><td>{{ vendor.email }}</td></tr>
+    <tr><th>Bot URL</th><td class="mono">{{ vendor.bot_base_url or '-' }}</td></tr>
+    <tr><th>Status webhook</th><td class="mono">{{ vendor.status_webhook_url or '-' }}</td></tr>
+    <tr><th>Country code / daily cap</th><td>{{ vendor.default_country_code }} / {{ vendor.marketing_daily_cap }}</td></tr>
+    <tr><th>Last plugin request</th><td>{{ last_seen|dt }}</td></tr>
+    <tr><th>Created</th><td>{{ vendor.created_at|dt }}</td></tr>
+    <tr><th>Note</th><td>{{ vendor.internal_note or '-' }}</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Bot connection</h2>
+  <p class="hint">Sends one signed sample request to the real bot, whatever the inbound mode is.</p>
+  <form method="post" action="/admin/vendors/{{ vendor.id }}/lab/test-bot">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <button type="submit">Test bot connection</button>
+  </form>
+</div>
+
+{% if ctx.is_superadmin %}
+<div class="card">
+  <h2>Modes</h2>
+  {% if vendor.inbound_mode != 'forward' %}
+  <div class="warn">Inbound mode is <b>{{ vendor.inbound_mode }}</b>: the vendor's bot is not called for real customers.</div>
+  {% endif %}
+  <form method="post" action="/admin/vendors/{{ vendor.id }}/modes">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <div class="row">
+      <div><label for="inbound_mode">Inbound</label>
+        <select id="inbound_mode" name="inbound_mode">
+          {% for m in inbound_modes if m.value != 'mock_bot' or enable_mock_bot or vendor.inbound_mode == 'mock_bot' %}
+          <option value="{{ m.value }}" {{ 'selected' if vendor.inbound_mode == m.value }}>{{ m.value }}</option>
+          {% endfor %}
+        </select></div>
+      <div><label for="outbound_mode">Outbound</label>
+        <select id="outbound_mode" name="outbound_mode">
+          {% for m in outbound_modes %}<option value="{{ m.value }}" {{ 'selected' if vendor.outbound_mode == m.value }}>{{ m.value }}</option>{% endfor %}
+        </select></div>
+    </div>
+    <p><input id="confirm_modes" type="checkbox" name="confirm"> <label class="inline" for="confirm_modes">I understand: switching away from <b>forward</b> means real customers get canned/echo/silent answers.</label></p>
+    <button type="submit">Save modes</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Status</h2>
+  <form method="post" action="/admin/vendors/{{ vendor.id }}/status">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    {% if vendor.status == 'active' %}
+    <input type="hidden" name="action" value="suspend">
+    <p><input id="confirm_suspend" type="checkbox" name="confirm"> <label class="inline" for="confirm_suspend">Suspend this vendor (their keys stop working at once).</label></p>
+    <button class="danger" type="submit">Suspend</button>
+    {% else %}
+    <input type="hidden" name="action" value="activate">
+    <button type="submit">Activate</button>
+    {% endif %}
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>API keys</h2>
+  <table>
+    <tr><th>Kind</th><th>Prefix</th><th>Status</th><th>Last used</th><th>Created</th><th></th></tr>
+    {% for k in keys %}
+    <tr>
+      <td>{{ k.kind }}</td><td class="mono">wab_{{ k.kind }}_{{ k.key_prefix }}_...</td>
+      <td><span class="badge {{ 'ok' if k.status == 'active' else 'bad' }}">{{ k.status }}</span></td>
+      <td>{{ k.last_used_at|dt }}</td><td>{{ k.created_at|dt }}</td>
+      <td>{% if ctx.is_superadmin and k.status == 'active' %}
+        <form class="inline-form" method="post" action="/admin/vendors/{{ vendor.id }}/keys/{{ k.id }}/revoke">
+          <input type="hidden" name="csrf_token" value="{{ csrf }}"><button class="danger" type="submit">Revoke</button></form>
+      {% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% if ctx.is_superadmin %}
+  <p>
+    {% for kind in ['live', 'test'] %}
+    <form class="inline-form" method="post" action="/admin/vendors/{{ vendor.id }}/keys/rotate">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}"><input type="hidden" name="kind" value="{{ kind }}">
+      <button class="secondary" type="submit">Rotate {{ kind }} key</button></form>
+    {% endfor %}
+  </p>
+  <p class="hint">Rotating revokes the active keys of that kind and shows the new key once.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Canned rules (used when inbound mode is canned)</h2>
+  <table>
+    <tr><th>Priority</th><th>Match</th><th>Value</th><th>Reply</th><th></th></tr>
+    {% for r in rules %}
+    <tr><td>{{ r.priority }}</td><td>{{ r.match_type }}</td><td class="mono">{{ r.match_value }}</td><td>{{ r.reply_text }}</td>
+      <td>{% if ctx.is_superadmin %}<form class="inline-form" method="post" action="/admin/vendors/{{ vendor.id }}/rules/{{ r.id }}/delete">
+        <input type="hidden" name="csrf_token" value="{{ csrf }}"><button class="danger" type="submit">Delete</button></form>{% endif %}</td></tr>
+    {% else %}
+    <tr><td colspan="5" class="hint">No rules: every message gets the built-in default reply.</td></tr>
+    {% endfor %}
+  </table>
+  {% if ctx.is_superadmin %}
+  <form method="post" action="/admin/vendors/{{ vendor.id }}/rules">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <div class="row">
+      <div><label for="priority">Priority</label><input id="priority" type="number" name="priority" value="100"></div>
+      <div><label for="match_type">Match</label>
+        <select id="match_type" name="match_type">{% for t in match_types %}<option value="{{ t.value }}">{{ t.value }}</option>{% endfor %}</select></div>
+      <div><label for="match_value">Value</label><input id="match_value" type="text" name="match_value" placeholder="price, or image / ptt / audio ..."></div>
+    </div>
+    <label for="reply_text">Reply</label><textarea id="reply_text" name="reply_text" required></textarea>
+    <p><button type="submit">Add rule</button></p>
+  </form>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Recent requests</h2>
+  {% include "_logs_table.html" %}
+</div>
+{% endblock %}

@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}New key{% endblock %}
+{% block content %}
+<h1>New {{ kind }} key for {{ vendor.business_name }}</h1>
+<div class="warn"><b>Copy it now.</b> It is shown only once. The previous {{ kind }} keys no longer work.</div>
+<div class="card"><div class="secret mono">{{ new_key }}</div></div>
+<p><a class="btn" href="/admin/vendors/{{ vendor.id }}">Back to the vendor</a></p>
+{% endblock %}

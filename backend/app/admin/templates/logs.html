@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Request logs{% endblock %}
+{% block content %}
+<h1>Request logs</h1>
+<p class="hint">Metadata only: no message text, files or replies are stored.</p>
+<div class="card">
+<form method="get" action="/admin/logs">
+  <label for="vendor_id">Vendor</label>
+  <select id="vendor_id" name="vendor_id">
+    <option value="">All vendors</option>
+    {% for v in vendors %}<option value="{{ v.id }}" {{ 'selected' if selected == v.id }}>{{ v.business_name }}</option>{% endfor %}
+  </select>
+  <p><button type="submit">Filter</button></p>
+</form>
+</div>
+<div class="card">
+{% include "_logs_table.html" %}
+</div>
+{% endblock %}

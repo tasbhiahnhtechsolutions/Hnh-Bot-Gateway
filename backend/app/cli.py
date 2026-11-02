@@ -1,12 +1,16 @@
 """Command line tools: ``gateway create-vendor | list-vendors | rotate-key | test-bot | seed``.
 
+Also ``create-admin`` for admin panel accounts.
+
 Secrets (keys, bot secret) are printed to the terminal once and are never logged.
 ``simulate-incoming`` is added together with the ``/v1/ai-reply`` pipeline it calls (plan step 3).
 """
 
 import argparse
 import asyncio
+import getpass
 import json
+import secrets
 import sys
 import uuid
 from collections.abc import Sequence
@@ -21,10 +25,12 @@ from app.core.errors import ApiError
 from app.core.security import KeyKind, SecretBox
 from app.db.session import create_engine, create_session_factory
 from app.models import InboundMode, OutboundMode
+from app.models.admin import AdminRole
 from app.repositories import api_keys, vendors
 from app.schemas.ai_reply import MediaType
 from app.schemas.vendor import VendorCreate
 from app.services import api_keys as key_service
+from app.services.admins import create_admin
 from app.services.inbound import InboundDeps
 from app.services.mock_bot import MockScenario
 from app.services.seed import seed_demo_vendors
@@ -90,6 +96,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     probe.add_argument("vendor_id", type=uuid.UUID)
 
+    admin = sub.add_parser(
+        "create-admin", help="create an admin panel account (the password is never an argument)"
+    )
+    admin.add_argument("--email", required=True)
+    admin.add_argument("--role", choices=[r.value for r in AdminRole], default="superadmin")
+    admin.add_argument(
+        "--generate", action="store_true", help="generate a random password and print it once"
+    )
+
     sub.add_parser("seed", help="create the 3 demo vendors (dev/test only, safe to repeat)")
     return parser
 
@@ -102,6 +117,15 @@ def _print_secrets(created: CreatedVendor) -> None:
     print(f"  TEST key:       {s.test_key}")
     print(f"  Bot secret:     {s.bot_secret}")
     print(f"  Webhook secret: {s.webhook_secret}")
+
+
+def _admin_password(*, generate: bool) -> str:
+    if generate:
+        return secrets.token_urlsafe(18)
+    first = getpass.getpass("Password (at least 12 characters): ")
+    if first != getpass.getpass("Repeat the password: "):
+        raise ApiError(400, "INVALID_REQUEST", "the two passwords differ")
+    return first
 
 
 async def run(argv: Sequence[str], settings: Settings | None = None) -> int:
@@ -181,6 +205,15 @@ async def _dispatch(
         print("PASS" if report.ok else f"FAIL: {report.error_code}")
         if not report.ok:
             raise SimulationFailed
+    elif args.command == "create-admin":
+        password = _admin_password(generate=args.generate)
+        admin = await create_admin(
+            db, email=args.email, password=password, role=AdminRole(args.role)
+        )
+        print(f"Admin created: {admin.email} ({admin.role})")
+        if args.generate:
+            print("Password (shown ONCE, change it by creating a new admin if lost):")
+            print(f"  {password}")
     elif args.command == "seed":
         result = await seed_demo_vendors(db, box=box, allow_private_bot_urls=allow_private)
         for created in result.created:
@@ -188,6 +221,9 @@ async def _dispatch(
             print()
         for name in result.skipped:
             print(f"{name}: already exists (use rotate-key for a new key)")
+        if result.admin_password:
+            print(f"Dev admin created: {result.admin_email}")
+            print(f"  Password (shown ONCE): {result.admin_password}")
 
 
 def main(argv: Sequence[str] | None = None) -> int:

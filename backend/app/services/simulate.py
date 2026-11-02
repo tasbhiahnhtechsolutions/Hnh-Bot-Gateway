@@ -38,25 +38,30 @@ def guess_media_type(path: Path) -> MediaType:
     return "document"
 
 
-def build_test_payload(
-    *, text: str = "", file: Path | None = None, media_type: str | None = None
+def build_payload(
+    *,
+    text: str = "",
+    file_name: str | None = None,
+    file_bytes: bytes | None = None,
+    media_type: str | None = None,
 ) -> AiReplyRequest:
+    """A fake one-message customer request, optionally with one attached file."""
     media: Media | None = None
-    if file is not None:
-        kind = media_type or guess_media_type(file)
+    if file_bytes is not None:
+        name = file_name or "file"
+        kind = media_type or guess_media_type(Path(name))
         if kind not in get_args(MediaType):
             raise ApiError(
                 400, "INVALID_REQUEST", f"media type must be one of {get_args(MediaType)}"
             )
-        data = file.read_bytes()
-        too_big = len(data) > LARGE_FILE_LIMIT
+        too_big = len(file_bytes) > LARGE_FILE_LIMIT
         media = Media(
             media_type=kind,
-            mime_type=mimetypes.guess_type(file.name)[0] or "application/octet-stream",
-            file_name=file.name,
-            file_size=len(data),
+            mime_type=mimetypes.guess_type(name)[0] or "application/octet-stream",
+            file_name=name,
+            file_size=len(file_bytes),
             caption=text,
-            base64_data=None if too_big else base64.b64encode(data).decode("ascii"),
+            base64_data=None if too_big else base64.b64encode(file_bytes).decode("ascii"),
             skipped_large_file=too_big,
         )
     return AiReplyRequest(
@@ -65,6 +70,17 @@ def build_test_payload(
         sender_name="Test Customer",
         sender_number="+923001112222",
         incoming_messages=[IncomingMessage(text=text, timestamp="12:00:00", media=media)],
+    )
+
+
+def build_test_payload(
+    *, text: str = "", file: Path | None = None, media_type: str | None = None
+) -> AiReplyRequest:
+    return build_payload(
+        text=text,
+        file_name=file.name if file else None,
+        file_bytes=file.read_bytes() if file else None,
+        media_type=media_type,
     )
 
 

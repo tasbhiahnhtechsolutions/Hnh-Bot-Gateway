@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Vendors{% endblock %}
+{% block content %}
+<div class="row"><div><h1>Vendors</h1></div>
+{% if ctx.is_superadmin %}<div style="text-align:right"><a class="btn" href="/admin/vendors/new">+ Create vendor</a></div>{% endif %}</div>
+<div class="card">
+<table>
+  <tr><th>Business</th><th>Number</th><th>Status</th><th>Inbound</th><th>Outbound</th><th>Bot URL</th><th>Last plugin request</th></tr>
+  {% for v in vendors %}
+  <tr>
+    <td><a href="/admin/vendors/{{ v.id }}">{{ v.business_name }}</a></td>
+    <td class="mono">{{ v.phone_e164|phone }}</td>
+    <td><span class="badge {{ 'ok' if v.status == 'active' else 'bad' }}">{{ v.status }}</span></td>
+    <td><span class="badge {{ '' if v.inbound_mode == 'forward' else 'warn' }}">{{ v.inbound_mode }}</span></td>
+    <td>{{ v.outbound_mode }}</td>
+    <td class="mono">{{ v.bot_base_url or '-' }}</td>
+    <td>{{ last_seen.get(v.id)|dt }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7" class="hint">No vendors yet.</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}

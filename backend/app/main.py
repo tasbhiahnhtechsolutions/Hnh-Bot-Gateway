@@ -6,6 +6,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from redis.asyncio import Redis
 
+from app.admin.router import register_admin
+from app.admin.security import install_admin_security, parse_allowlist
 from app.api import health
 from app.api.v1 import plugin, sandbox
 from app.core.config import AppEnv, Settings, get_settings
@@ -47,7 +49,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         settings=settings, box=SecretBox(settings.secret_encryption_key.get_secret_value())
     )
 
+    if settings.app_env in (AppEnv.STAGING, AppEnv.PROD) and not settings.admin_ip_allowlist:
+        get_logger(__name__).warning("admin_ip_allowlist_empty", note="admin panel open to any IP")
+
     register_error_handlers(app)
+    install_admin_security(app, parse_allowlist(settings.admin_ip_allowlist))
+    register_admin(app)
     app.include_router(health.router)
     app.include_router(plugin.router)
     app.include_router(sandbox.router)

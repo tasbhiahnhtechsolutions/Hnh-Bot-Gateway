@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{% block title %}Admin{% endblock %} - Vendor Gateway</title>
+<link rel="stylesheet" href="/admin/static/admin.css">
+</head>
+<body>
+{% if admin %}
+<header class="top">
+  <span class="brand">Vendor Gateway</span>
+  <a href="/admin">Dashboard</a>
+  <a href="/admin/vendors">Vendors</a>
+  <a href="/admin/logs">Request logs</a>
+  {% if ctx.is_superadmin %}<a href="/admin/audit">Audit log</a>{% endif %}
+  <span class="spacer"></span>
+  <span>{{ admin.email }} <span class="badge">{{ admin.role }}</span></span>
+  <form method="post" action="/admin/logout">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <button class="link" type="submit">Log out</button>
+  </form>
+</header>
+{% endif %}
+<main>
+{% if notice %}<div class="notice">{{ notice }}</div>{% endif %}
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

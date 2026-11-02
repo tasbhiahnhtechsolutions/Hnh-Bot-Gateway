@@ -30,3 +30,16 @@ async def last_seen_by_vendor(db: AsyncSession) -> dict[uuid.UUID, datetime]:
         .group_by(RequestLog.vendor_id)
     )
     return {row[0]: row[1] for row in rows.all()}
+
+
+async def counts_since(db: AsyncSession, since: datetime) -> dict[str, int]:
+    """``{"ok": n, "error": n}`` for requests created at or after ``since``."""
+    rows = await db.execute(
+        select(RequestLog.status, func.count())
+        .where(RequestLog.created_at >= since)
+        .group_by(RequestLog.status)
+    )
+    counts = {"ok": 0, "error": 0}
+    for status, count in rows.all():
+        counts[status] = count
+    return counts
