@@ -104,7 +104,15 @@ async def call_bot(
 
         try:
             async with asyncio.timeout(settings.bot_timeout_seconds):
-                status, response_body = await _post(target, headers, raw, ips, transport, settings)
+                status, response_body = await post_pinned(
+                    target,
+                    headers,
+                    raw,
+                    ips,
+                    transport,
+                    timeout_seconds=settings.bot_timeout_seconds,
+                    max_bytes=settings.max_bot_response_bytes,
+                )
         except TimeoutError as exc:
             raise BotCallError(
                 504,
@@ -114,7 +122,7 @@ async def call_bot(
             ) from exc
         except httpx.TimeoutException as exc:
             raise BotCallError(504, "BOT_TIMEOUT", "bot connection timed out", report) from exc
-        except _TooLarge as exc:
+        except TooLargeError as exc:
             raise BotCallError(
                 502, "BOT_RESPONSE_TOO_LARGE", "bot response is too large", report
             ) from exc
@@ -144,27 +152,29 @@ async def call_bot(
         report.latency_ms = round((time.monotonic() - started) * 1000)
 
 
-class _TooLarge(Exception):
+class TooLargeError(Exception):
     pass
 
 
-async def _post(
+async def post_pinned(
     url: str,
     headers: dict[str, str],
     raw: bytes,
     ips: list[str],
     transport: httpx.AsyncBaseTransport | None,
-    settings: Settings,
+    *,
+    timeout_seconds: float,
+    max_bytes: int,
 ) -> tuple[int, bytes]:
     """Send once. With vetted IPs we connect to the IP itself and keep the hostname for the
     Host header and TLS, so the answer of a second DNS lookup cannot redirect us (DNS rebinding).
     """
     parsed = httpx.URL(url)
     async with httpx.AsyncClient(
-        transport=transport, follow_redirects=False, timeout=settings.bot_timeout_seconds
+        transport=transport, follow_redirects=False, timeout=timeout_seconds
     ) as client:
         if not ips:
-            return await _send(client, url, headers, raw, {}, settings)
+            return await _send(client, url, headers, raw, {}, max_bytes)
 
         last_error: httpx.HTTPError | None = None
         for ip in ips:
@@ -172,7 +182,7 @@ async def _post(
             pin_headers = {**headers, "Host": parsed.netloc.decode("ascii")}
             extensions = {"sni_hostname": parsed.host}
             try:
-                return await _send(client, str(pinned), pin_headers, raw, extensions, settings)
+                return await _send(client, str(pinned), pin_headers, raw, extensions, max_bytes)
             except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
                 last_error = exc  # this address is unreachable: try the next vetted one
         assert last_error is not None
@@ -185,7 +195,7 @@ async def _send(
     headers: dict[str, str],
     raw: bytes,
     extensions: dict[str, Any],
-    settings: Settings,
+    max_bytes: int,
 ) -> tuple[int, bytes]:
     request = client.build_request("POST", url, headers=headers, content=raw, extensions=extensions)
     response = await client.send(request, stream=True)
@@ -194,8 +204,8 @@ async def _send(
         size = 0
         async for chunk in response.aiter_bytes():
             size += len(chunk)
-            if size > settings.max_bot_response_bytes:  # counted after decompression
-                raise _TooLarge
+            if size > max_bytes:  # counted after decompression
+                raise TooLargeError
             chunks.append(chunk)
         return response.status_code, b"".join(chunks)
     finally:

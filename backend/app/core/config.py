@@ -50,6 +50,16 @@ class Settings(BaseSettings):
     admin_ip_allowlist: str = ""
     admin_session_hours: int = Field(default=8, ge=1, le=72)
 
+    # Outbound (plan section 8). A vendor whose queue holds this many open jobs gets 503 QUEUE_FULL;
+    # more than this many API calls per minute get 429 RATE_LIMITED.
+    max_queued_jobs_per_vendor: int = Field(default=1000, ge=1)
+    outbound_rate_limit_per_minute: int = Field(default=600, ge=1)
+    # Browsers send this Origin when the extension opens the socket. Empty = do not check Origin
+    # (the API key is the real protection). Comma-separated list.
+    socket_allowed_origins: str = ""
+    # Webhook deliveries (plan section 17.B.8): total attempts and the pause before each retry.
+    webhook_timeout_seconds: float = 10.0
+
     # Wrong-key attempts allowed per client IP per minute (plan section 4).
     auth_fail_limit_per_minute: int = 20
 

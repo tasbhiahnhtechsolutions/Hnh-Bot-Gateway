@@ -27,7 +27,14 @@ from app.core.security import SecretBox
 from app.main import create_app
 from app.schemas.vendor import VendorCreate
 from app.services.inbound import InboundDeps
+from app.services.runtime import Runtime
 from app.services.vendors import CreatedVendor, create_vendor
+from tests.integration.outbound_support import (
+    FakeClock,
+    InlineScheduler,
+    Outbound,
+    RecordingEmitter,
+)
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
@@ -122,6 +129,12 @@ class Api:
     # API key -> the vendor's WhatsApp number. post_reply sends it as X-WA-Number like the real
     # plugin does, because the gateway rejects a missing or wrong number by default.
     numbers: dict[str, str] = field(default_factory=dict)
+    out: Outbound | None = None
+
+    @property
+    def ob(self) -> Outbound:
+        assert self.out is not None
+        return self.out
 
     async def vendor(self, **fields: object) -> CreatedVendor:
         values: dict[str, object] = {
@@ -195,6 +208,18 @@ async def make_api(migrated_url: str, redis_url: str, clean_db: None) -> AsyncIt
         )
         client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
         api = Api(client=client, app=app, settings=settings, box=box, bot=bot)
+        # Outbound: no Celery broker, no real socket. The test plays worker and plugin.
+        scheduler, emitter, clock = InlineScheduler(), RecordingEmitter(), FakeClock()
+        runtime = Runtime(
+            settings=settings,
+            redis=app.state.redis,
+            scheduler=scheduler,
+            emitter=emitter,
+            box=box,
+            clock=clock,
+        )
+        app.state.runtime = runtime
+        api.out = Outbound(api, runtime, scheduler, emitter, clock)
         created.append(api)
         return api
 

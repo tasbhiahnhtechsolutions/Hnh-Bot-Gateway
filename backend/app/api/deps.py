@@ -12,6 +12,7 @@ from app.repositories import api_keys
 from app.services import rate_limit
 from app.services.auth import AuthContext, authenticate
 from app.services.inbound import InboundDeps
+from app.services.runtime import Runtime
 
 LAST_USED_REFRESH = timedelta(seconds=60)
 
@@ -56,6 +57,12 @@ async def get_auth(
     return ctx
 
 
+def get_runtime(request: Request) -> Runtime:
+    runtime: Runtime = request.app.state.runtime
+    return runtime
+
+
 Auth = Annotated[AuthContext, Depends(get_auth)]
 Db = Annotated[AsyncSession, Depends(get_db)]
 Deps = Annotated[InboundDeps, Depends(get_inbound_deps)]
+RuntimeDep = Annotated[Runtime, Depends(get_runtime)]
