@@ -1396,6 +1396,14 @@ Tests:
 - **5 profiles routing:** 5 Chromium contexts + 5 keys, random jobs, har job sirf sahi fake WhatsApp mein.
 - **Memory:** 8 ghante simulated traffic mein memory/CPU flat.
 
+**Step 7 mein Phase 1 ke liye asal mein kya hua:**
+- **Unit + API integration (14.1, 14.3 ka Phase 1 hissa):** pehle se Steps 1 se 6 ke saath bane (key utils, number normalize, SSRF, schemas, signature, har inbound mode, `/ai-reply` ke sab bot jawab, 401/403/413/`NUMBER_MISMATCH`, canned mode mein bot ko zero calls, log redaction). Step 7 mein sirf khali jagahen dekhi gayin; naya kuch nahi chahiye tha.
+- **Signature cross-language (14.2), `backend/tests/cross_language/`:** teen alag implementations ek doosre se check hote hain: gateway (`app/core/signing.py`), Node vendor (`node_verifier.mjs`, contract 5.4 ki logic + timestamp) aur reference bot (`reference-bot/app/security.py`). Unicode/Urdu/emoji, newline, binary, khali, **30 MB** body; ek byte badli, galat secret, JSON dobara serialize (spacing badle), 6 min purana aur 10 min future timestamp, secret rotation (do signatures). Ulta bhi: Node sign kare to Python aur bot verify karein (byte-for-byte same header). Aur contract (`ai-contract.md` 5.3) ka Python code block **document se nikal kar chalaya** jata hai, taake doc aur code alag na hon. Signer mein `.` ko `:` kar ke dekha: 19 tests fail hue.
+- **Playwright smoke (14.9, 8.9) `extension/e2e/`:** asli Chromium (naya headless mode, jo extensions chalata hai) + built dev extension + nakli `web.whatsapp.com` (`fake-whatsapp.js`, Playwright `route` se serve; `window.require` ke modules, `deliverIncoming`, `sent`) + asli gateway (docker compose). Do browser profiles, do vendors (`demo-canned`, `demo-echo`), do alag keys: popup har profile mein apna business dikhata hai; customer ka message sirf usi profile se jawab pata hai jisme aaya; burst ke do messages ek request mein jate hain (echo jawab dono dikhata hai); group message ka jawab nahi; auto-reply off/on; galat key popup mein refuse; aur gateway ke `request_logs` mein bilkul utni requests jitni bheji gayin, sirf do vendors ki. Group check aur burst-merge hata kar mutation test kiya: dono par test fail hua.
+- Chalane ke liye: `make e2e` (taza docker stack, ~2 min, ant mein stack hata deta hai). CI mein `e2e` job.
+- Plugin mein ek chhoti tabdeeli: popup ke messages ab `sender.url` se pehchane jate hain (apne extension ka URL), sirf `sender.tab` se nahi, kyun ke popup page tab mein khulne par Chrome tab bhi dikhata hai. Web page ka URL apna hota hai, wo popup ban nahi sakta (unit test mein check). 66 Node tests.
+- **Jo Phase 1 mein nahi aaya (Phase 2 ya baad):** race/pacing/Celery/Socket.IO/Toxiproxy/Hypothesis/soak tests (outbound ke saath), service-worker kill aur browser offline, `waState` tests (spike ke baad), Locust/k6.
+
 ### 14.10 Hypothesis (random events) test
 
 Computer khud hazaron random sequences banata hai: `api_post_job`, `plugin_connect`, `plugin_disconnect`, `deliver_job`, `ack_started`, `result_sent`, `result_failed`, `duplicate_result`, `lease_expire`, `ttl_pass`, `wa_state_change`, `worker_crash`, `broker_down/up`, `webhook_fail`. Har step ke baad check:
@@ -1459,7 +1467,7 @@ Computer khud hazaron random sequences banata hai: `api_post_job`, `plugin_conne
 - [x] P1B: admin shell (login, vendors list, create vendor with onboarding fields + show-once keys, mode toggles)
 - [x] P1: plugin (popup API key + whoami, config.js + build script, background, injected fixes, manifest)
 - [x] P1: vendor kit (contract doc + FastAPI reference bot with signature verify, section 7.5)
-- [ ] P1: tests (unit, API integration, sandbox modes, signature cross-language, Playwright smoke, 2-profile routing)
+- [x] P1: tests (unit, API integration, sandbox modes, signature cross-language, Playwright smoke, 2-profile routing)
 - [ ] P2 spike: new chat send, connection state, ack level, LID mapping, buttons feasibility
 - [ ] P2: migrations (outbound_jobs, devices, webhooks) + one_inflight index (`admins`, `audit_log` Phase 1B mein ban chuke)
 - [ ] P2: `/v1/message-to-customer` (number, message, type, ttlSeconds, Idempotency-Key, daily cap) + status GET

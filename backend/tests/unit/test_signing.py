@@ -1,7 +1,5 @@
 import hashlib
 import hmac
-import shutil
-import subprocess
 import time
 
 import pytest
@@ -120,33 +118,3 @@ def test_rotation_accepts_new_or_old_secret() -> None:
 def test_missing_or_malformed_headers_fail(headers: dict[str, str]) -> None:
     with pytest.raises(SignatureError):
         verify_signature(SECRET, headers, b"{}", now=NOW)
-
-
-NODE_VERIFIER = r"""
-// The verification code of ai-contract.md section 5.4, as a plain function.
-const crypto = require('crypto');
-const [secret, ts, header, bodyHex] = process.argv.slice(1);
-const body = Buffer.from(bodyHex, 'hex');
-const expected = crypto.createHmac('sha256', secret).update(`${ts}.`).update(body).digest('hex');
-const given = header.split(',').map(s => s.trim().replace('v1=', ''));
-const ok = given.some(g => g.length === expected.length &&
-  crypto.timingSafeEqual(Buffer.from(g), Buffer.from(expected)));
-process.exit(ok ? 0 : 1);
-"""
-
-
-@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-@pytest.mark.parametrize("body", BODIES[:3], ids=["json", "urdu-emoji", "newline"])
-def test_node_verifier_from_the_contract_accepts_our_signature(body: bytes) -> None:
-    header = signature_header(["whsec_new", SECRET], NOW, body)
-
-    def run(secret: str, payload: bytes) -> int:
-        return subprocess.run(  # noqa: S603
-            ["node", "-e", NODE_VERIFIER, secret, str(NOW), header, payload.hex()],  # noqa: S607
-            check=False,
-        ).returncode
-
-    assert run(SECRET, body) == 0
-    assert run("whsec_new", body) == 0
-    assert run("whsec_wrong", body) == 1
-    assert run(SECRET, body + b" ") == 1

@@ -1,10 +1,10 @@
-.PHONY: help up down logs migrate seed gateway lint format typecheck test test-unit ext-test ext-dev ext-prod bot bot-local bot-test bot-lint
+.PHONY: help up down logs migrate seed gateway lint format typecheck test test-unit ext-test ext-dev ext-prod bot bot-local bot-test bot-lint e2e
 
 COMPOSE ?= docker compose
 BACKEND := cd backend &&
 
 help:
-	@echo "make up | down | logs | migrate | seed | gateway ARGS=... | lint | format | typecheck | test | test-unit | ext-test | ext-dev | ext-prod URL=... | bot BOT_SECRET=... | bot-local | bot-test | bot-lint"
+	@echo "make up | down | logs | migrate | seed | gateway ARGS=... | lint | format | typecheck | test | test-unit | ext-test | ext-dev | ext-prod URL=... | bot BOT_SECRET=... | bot-local | bot-test | bot-lint | e2e"
 
 .env:
 	@cp .env.example .env
@@ -75,3 +75,12 @@ bot-test:
 
 bot-lint:
 	cd reference-bot && uv run ruff check . && uv run ruff format --check . && uv run mypy
+
+# Phase 1 smoke test: a fresh docker stack, real Chromium with the built extension, a fake
+# web.whatsapp.com, two browser profiles with two vendors. Needs Docker and Node; ~3 minutes.
+e2e:
+	$(COMPOSE) down -v
+	$(MAKE) up
+	@until curl -fs localhost:8000/ready >/dev/null; do sleep 2; done
+	cd extension/e2e && npm ci && npx playwright install chromium
+	@cd extension/e2e && npx playwright test; status=$$?; cd ../.. && $(COMPOSE) down -v; exit $$status

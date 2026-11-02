@@ -303,8 +303,12 @@ const POPUP_HANDLERS = {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message.type !== 'string') return false;
 
+  // A page of our own extension (the popup) can also show up with a tab, for example when it is
+  // opened as a tab by the e2e tests. Chrome fills sender.url itself, a web page cannot fake it.
+  const ownPage = typeof sender.url === 'string' && sender.url.startsWith(chrome.runtime.getURL(''));
+
   let task;
-  if (sender.tab) {
+  if (sender.tab && !ownPage) {
     // From content.js (a WhatsApp Web tab).
     if (message.type === 'WA_LOGGER_AI_REQUEST') task = handleAiRequest(message, sender);
     else if (message.type === 'GET_CONTROL') task = getState().then((state) => ({ active: isActive(state) }));

@@ -9,4 +9,6 @@ __pycache__/
 .pytest_cache/
 .coverage
 dist/
+test-results/
+playwright-report/
 *.log

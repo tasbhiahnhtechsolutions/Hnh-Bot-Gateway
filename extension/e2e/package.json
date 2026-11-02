@@ -1,0 +1,12 @@
+{
+  "name": "wa-gateway-extension-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright smoke tests: real Chromium + the built extension + a fake web.whatsapp.com + the real gateway",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

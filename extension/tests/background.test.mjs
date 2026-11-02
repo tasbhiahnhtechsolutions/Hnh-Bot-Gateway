@@ -246,6 +246,20 @@ test('popup-only actions are refused when they come from a web page tab', async 
   assert.equal(bg.store.apiKey, undefined);
 });
 
+test('the popup page works even when Chrome reports a tab for it, a web page still cannot', async () => {
+  const bg = makeBackground({ fetchImpl: async () => jsonResponse(200, { vendor: { businessName: 'Ali', whatsappNumber: '923001234567' } }) });
+  const popupInTab = { tab: { id: 9 }, url: 'chrome-extension://testid/popup.html' };
+  const result = await bg.send({ type: 'SAVE_KEY', apiKey: KEY }, popupInTab);
+  assert.equal(result.ok, true);
+
+  // a page that merely claims to be our popup has the page's own URL, not ours
+  const fakePopup = { tab: { id: 9 }, url: 'https://web.whatsapp.com/?chrome-extension://testid/popup.html' };
+  await assert.rejects(bg.send({ type: 'CLEAR_KEY' }, fakePopup), /not handled/);
+  const lookalike = { tab: { id: 9 }, url: 'chrome-extension://otherid/popup.html' };
+  await assert.rejects(bg.send({ type: 'CLEAR_KEY' }, lookalike), /not handled/);
+  assert.ok(bg.store.apiKey);
+});
+
 test('the service worker only talks to the gateway and never polls', async () => {
   const bg = makeBackground({ storage: withKey(), fetchImpl: async () => jsonResponse(200, { replies: ['hi'] }) });
   await bg.send(aiRequest(), TAB);

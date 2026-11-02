@@ -41,6 +41,15 @@ Inbound modes: `forward`, `canned`, `echo`, `mock_bot`, `paused`. Bot failures a
 
 Host ports: API `8000`, Postgres `5433`, Redis `6380` (so they do not clash with local installs).
 
+## Tests (Phase 1, step 7)
+
+```bash
+make test        # backend: unit + API integration (Docker) + cross-language signature (needs node)
+make bot-test    # reference bot
+make ext-test    # extension (Node)
+make e2e         # Playwright: real Chromium + extension + fake WhatsApp + docker stack, 2 profiles
+```
+
 ## Reference bot (Phase 1, step 6)
 
 `reference-bot/` is a standalone FastAPI app that follows `ai-contract.md`: it checks the HMAC

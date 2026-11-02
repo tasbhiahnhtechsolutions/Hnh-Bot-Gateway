@@ -67,6 +67,7 @@ export function makeBackground({ fetchImpl, storage = {}, tabs = [{ id: 7 }], co
       onChanged: { addListener: (fn) => changeListeners.push(fn) },
     },
     runtime: {
+      getURL: (path = '') => `chrome-extension://testid/${path}`,
       onMessage: { addListener: (fn) => { handlers.message = fn; } },
       onInstalled: { addListener: (fn) => { handlers.installed = fn; } },
       onStartup: { addListener: (fn) => { handlers.startup = fn; } },
