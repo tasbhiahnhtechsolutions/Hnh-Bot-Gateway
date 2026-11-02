@@ -1404,6 +1404,12 @@ Tests:
 - Plugin mein ek chhoti tabdeeli: popup ke messages ab `sender.url` se pehchane jate hain (apne extension ka URL), sirf `sender.tab` se nahi, kyun ke popup page tab mein khulne par Chrome tab bhi dikhata hai. Web page ka URL apna hota hai, wo popup ban nahi sakta (unit test mein check). 66 Node tests.
 - **Jo Phase 1 mein nahi aaya (Phase 2 ya baad):** race/pacing/Celery/Socket.IO/Toxiproxy/Hypothesis/soak tests (outbound ke saath), service-worker kill aur browser offline, `waState` tests (spike ke baad), Locust/k6.
 
+**Phase 2 Spike kit (`spike/`), kya bana aur kya NAHI:**
+- Bana: `spike/spike.js` (DevTools console mein paste hone wali script, `window.WASpike`), `spike/README.md` (insaan ke steps A se H), `spike/SPIKE_REPORT.md` (report template), `make spike-test` (kit ke apne 10 tests, CI mein `spike` job).
+- Safety: sirf `send()` aur `tryInteractive()` asli message bhejte hain, `{confirm:'SEND'}` ke baghair nahi, ek page load mein max 5. Script mein koi network code nahi. Report mein numbers aakhri 4 digits tak masked, message text/chat naam kabhi nahi. Jo probe fail ho wo fail record hota hai, kabhi fake nahi.
+- **Ye tests sirf kit ke wade check karte hain, WhatsApp ke baare mein kuch sabit nahi karte.** Bheje gaye/na bheje, naya number, connection state, ack, `@lid`, buttons: ye sab abhi **unverified** hain jab tak insaan asli test account pe chala kar report na de.
+- **Outbound (`/v1/message-to-customer`, plugin send, Socket.IO, Celery) abhi nahi banaya.** Spike report ke baad 8.8 adjust hoga, tab Phase 2 aage chalega. Checklist ka "P2 spike" item isi liye unticked hai.
+
 ### 14.10 Hypothesis (random events) test
 
 Computer khud hazaron random sequences banata hai: `api_post_job`, `plugin_connect`, `plugin_disconnect`, `deliver_job`, `ack_started`, `result_sent`, `result_failed`, `duplicate_result`, `lease_expire`, `ttl_pass`, `wa_state_change`, `worker_crash`, `broker_down/up`, `webhook_fail`. Har step ke baad check:

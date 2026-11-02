@@ -1,10 +1,10 @@
-.PHONY: help up down logs migrate seed gateway lint format typecheck test test-unit ext-test ext-dev ext-prod bot bot-local bot-test bot-lint e2e
+.PHONY: help up down logs migrate seed gateway lint format typecheck test test-unit ext-test ext-dev ext-prod bot bot-local bot-test bot-lint e2e spike-test
 
 COMPOSE ?= docker compose
 BACKEND := cd backend &&
 
 help:
-	@echo "make up | down | logs | migrate | seed | gateway ARGS=... | lint | format | typecheck | test | test-unit | ext-test | ext-dev | ext-prod URL=... | bot BOT_SECRET=... | bot-local | bot-test | bot-lint | e2e"
+	@echo "make up | down | logs | migrate | seed | gateway ARGS=... | lint | format | typecheck | test | test-unit | ext-test | ext-dev | ext-prod URL=... | bot BOT_SECRET=... | bot-local | bot-test | bot-lint | e2e | spike-test"
 
 .env:
 	@cp .env.example .env
@@ -75,6 +75,10 @@ bot-test:
 
 bot-lint:
 	cd reference-bot && uv run ruff check . && uv run ruff format --check . && uv run mypy
+
+# Phase 2 Spike kit: only checks the kit's own safety promises (no real WhatsApp involved).
+spike-test:
+	cd spike && node --check spike.js && node --test "tests/*.test.mjs"
 
 # Phase 1 smoke test: a fresh docker stack, real Chromium with the built extension, a fake
 # web.whatsapp.com, two browser profiles with two vendors. Needs Docker and Node; ~3 minutes.

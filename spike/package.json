@@ -1,0 +1,10 @@
+{
+  "name": "wa-gateway-spike",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Phase 2 Spike kit: a console script a human runs on a real, logged-in WhatsApp Web",
+  "scripts": {
+    "check": "node --check spike.js",
+    "test": "node --test \"tests/*.test.mjs\""
+  }
+}
