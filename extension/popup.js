@@ -24,6 +24,10 @@
     autoReplyToggle: $('autoReplyToggle'),
     resumeBtn: $('resumeBtn'),
     lastError: $('lastError'),
+    outboundSection: $('outboundSection'),
+    lineText: $('lineText'),
+    waText: $('waText'),
+    queueText: $('queueText'),
   };
 
   function send(message) {
@@ -88,7 +92,44 @@
     setVisible(el.resumeBtn, Boolean(paused));
   }
 
+  const LINE_TEXT = {
+    connected: ['Connected', 'good'],
+    offline: ['Reconnecting...', 'warn'],
+    busy: ['Another computer is using this key', 'warn'],
+    off: ['Off', ''],
+  };
+  const WA_TEXT = {
+    connected: ['Connected', 'good'],
+    connecting: ['Connecting...', 'warn'],
+    offline: ['Offline', 'bad'],
+    logged_out: ['Logged out: scan the QR code', 'bad'],
+    not_loaded: ['Open WhatsApp Web', 'warn'],
+  };
+
+  function setStatusText(node, [text, kind]) {
+    node.textContent = text;
+    node.className = `status-text ${kind}`.trim();
+  }
+
+  // Shown only for a live key. Never shows a message text or a phone number of a customer.
+  function renderOutbound(status) {
+    const live = Boolean(status && status.hasKey && status.vendor && status.vendor.keyKind === 'live');
+    setVisible(el.outboundSection, live);
+    if (!live) return;
+    const line = status.realtime || { status: 'off', refusal: '' };
+    if (line.status === 'refused') setStatusText(el.lineText, [`Refused (${line.refusal || 'unknown'})`, 'bad']);
+    else setStatusText(el.lineText, LINE_TEXT[line.status] || LINE_TEXT.off);
+    setStatusText(el.waText, WA_TEXT[status.waState] || WA_TEXT.not_loaded);
+    const out = status.outbound || {};
+    const waiting = Number(out.queueLength) || 0;
+    const undelivered = Number(out.outboxLength) || 0;
+    const parts = [waiting ? `${waiting} sending` : 'Idle'];
+    if (undelivered) parts.push(`${undelivered} result(s) to report`);
+    setStatusText(el.queueText, [parts.join(', '), undelivered ? 'warn' : '']);
+  }
+
   function render(status) {
+    renderOutbound(status);
     renderBackend(status);
     renderKey(status);
     renderAutoReply(status);

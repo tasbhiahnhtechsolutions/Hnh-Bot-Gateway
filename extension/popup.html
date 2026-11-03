@@ -201,6 +201,10 @@
 
     .last-error { font-size: 11px; color: var(--text-main); margin-top: 4px; overflow-wrap: anywhere; }
     .last-error.none { color: var(--text-muted); }
+    .status-text { font-size: 11px; color: var(--text-main); text-align: right; overflow-wrap: anywhere; }
+    .status-text.good { color: var(--accent-green); }
+    .status-text.bad { color: var(--accent-red); }
+    .status-text.warn { color: var(--accent-yellow); }
     .hidden { display: none; }
   </style>
 </head>
@@ -229,6 +233,12 @@
       </div>
       <div id="keyHint" class="hint hidden"></div>
       <div id="keyMessage" class="msg hidden"></div>
+    </div>
+
+    <div id="outboundSection" class="section hidden">
+      <div class="row"><span class="label">Gateway line</span><span id="lineText" class="status-text"></span></div>
+      <div class="row"><span class="label">WhatsApp</span><span id="waText" class="status-text"></span></div>
+      <div class="row"><span class="label">Vendor messages</span><span id="queueText" class="status-text"></span></div>
     </div>
 
     <div id="connectedSection" class="section hidden">

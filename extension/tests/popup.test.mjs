@@ -9,6 +9,7 @@ import { EXTENSION_DIR, flush } from './helpers.mjs';
 const IDS = [
   'backendBadge', 'backendText', 'apiKeyInput', 'saveBtn', 'keyHint', 'keyMessage', 'connectedSection',
   'connectedName', 'connectedNumber', 'numberWarning', 'removeKeyBtn', 'autoReplyToggle', 'resumeBtn', 'lastError',
+  'outboundSection', 'lineText', 'waText', 'queueText',
 ];
 
 function fakeElement() {
@@ -142,4 +143,43 @@ test('the popup does not do any network itself and has no dashboard, health or l
   const popupHtml = readFileSync(join(EXTENSION_DIR, 'popup.html'), 'utf8');
   assert.doesNotMatch(popupJs, /fetch\(|XMLHttpRequest|HEALTH_URL|innerHTML/);
   assert.doesNotMatch(popupHtml, /Log Messages|Reset &amp; Re-Sync|Reset & Re-Sync|serverLink|http:\/\//);
+});
+
+test('live key: shows the gateway line, WhatsApp state and the queue', async () => {
+  const status = { ...connected, realtime: { status: 'connected', refusal: '' }, waState: 'connected', outbound: { queueLength: 2, sendingJobId: 'job_x', outboxLength: 1, lastResult: null } };
+  const { elements: e } = await openPopup(status);
+  assert.equal(e.outboundSection.hidden(), false);
+  assert.equal(e.lineText.textContent, 'Connected');
+  assert.ok(e.lineText.className.includes('good'));
+  assert.equal(e.waText.textContent, 'Connected');
+  assert.equal(e.queueText.textContent, '2 sending, 1 result(s) to report');
+  assert.ok(e.queueText.className.includes('warn'));
+});
+
+test('live key: each bad state is said in plain words', async () => {
+  const cases = [
+    [{ realtime: { status: 'refused', refusal: 'NUMBER_MISMATCH' }, waState: 'logged_out' }, 'Refused (NUMBER_MISMATCH)', 'Logged out: scan the QR code'],
+    [{ realtime: { status: 'busy', refusal: 'SESSION_ALREADY_ACTIVE' }, waState: 'not_loaded' }, 'Another computer is using this key', 'Open WhatsApp Web'],
+    [{ realtime: { status: 'offline', refusal: '' }, waState: 'offline' }, 'Reconnecting...', 'Offline'],
+    [{ realtime: { status: 'off', refusal: '' }, waState: 'connecting' }, 'Off', 'Connecting...'],
+  ];
+  for (const [extra, line, wa] of cases) {
+    const { elements: e } = await openPopup({ ...connected, outbound: { queueLength: 0, outboxLength: 0 }, ...extra });
+    assert.equal(e.lineText.textContent, line);
+    assert.equal(e.waText.textContent, wa);
+    assert.equal(e.queueText.textContent, 'Idle');
+  }
+});
+
+test('a test key or no key shows no outbound section', async () => {
+  const a = await openPopup({ ...connected, vendor: { ...connected.vendor, keyKind: 'test' } });
+  assert.equal(a.elements.outboundSection.hidden(), true);
+  const b = await openPopup({ backend: 'offline', hasKey: false, keyHint: '', vendor: null, paused: null, lastError: null });
+  assert.equal(b.elements.outboundSection.hidden(), true);
+});
+
+test('an old-style status without the new fields still renders', async () => {
+  const { elements: e } = await openPopup(connected);
+  assert.equal(e.lineText.textContent, 'Off');
+  assert.equal(e.waText.textContent, 'Open WhatsApp Web');
 });
