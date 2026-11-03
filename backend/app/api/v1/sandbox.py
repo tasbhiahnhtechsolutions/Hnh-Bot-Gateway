@@ -44,7 +44,24 @@ def _parse(raw: bytes) -> SimulateRequest:
     return request
 
 
-@router.post("/simulate-incoming")
+_BODY_DOC = {
+    "requestBody": {
+        "required": True,
+        "content": {
+            "application/json": {
+                "schema": {
+                    "type": "object",
+                    "properties": {"text": {"type": "string", "example": "hello"}},
+                },
+                "example": {"text": "hello"},
+            }
+        },
+    }
+}
+
+
+# The body is read raw (size limit), so FastAPI cannot see it: describe it for Swagger by hand.
+@router.post("/simulate-incoming", openapi_extra=_BODY_DOC)
 async def simulate_incoming_message(
     request: Request, auth: Auth, db: Db, deps: Deps
 ) -> dict[str, Any]:
