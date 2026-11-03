@@ -11,7 +11,12 @@
  * stopped at any time. The API key is never logged.
  */
 
-importScripts('config.js', 'gateway-client.js');
+importScripts('config.js', 'gateway-client.js', 'outbound.js', 'realtime.js');
+try {
+  importScripts('vendor/socket.io.min.js'); // bundled client: MV3 does not allow remote code
+} catch (_) {
+  // Missing bundle: the plugin still answers customers (inbound), it just cannot send for the vendor.
+}
 
 const GW = self.WAGatewayClient;
 const GATEWAY_BASE_URL = self.WA_GATEWAY_CONFIG.GATEWAY_BASE_URL;
@@ -22,6 +27,8 @@ const WHOAMI_TIMEOUT_MS = 10000;
 const WA_TAB_QUERY = { url: '*://web.whatsapp.com/*' };
 const REQUEST_ID_RE = /^[A-Za-z0-9._-]{1,64}$/;
 const STATE_KEYS = ['apiKey', 'deviceId', 'autoReplyEnabled', 'vendor', 'paused', 'lastError', 'waNumber'];
+const WA_STATE_MAX_AGE_MS = 25000; // injected.js reports every 5 s; older than this means the tab is gone
+const KEEPALIVE_ALARM = 'keepalive';
 
 // ---------------------------------------------------------------------------
 // State (chrome.storage.local)
@@ -210,6 +217,114 @@ async function handleAiRequest(message, sender) {
 }
 
 // ---------------------------------------------------------------------------
+// Outbound: the live line to the gateway and the send engine (plan sections 8.4, 8.7, 8.8)
+// ---------------------------------------------------------------------------
+
+let lastWaStateWrite = { state: '', at: 0 };
+
+// What WhatsApp Web is doing right now, as reported by the page every few seconds. Too old
+// (tab closed, computer asleep) counts as "not_loaded".
+async function currentWaState() {
+  const raw = await chrome.storage.local.get(['waState', 'waStateAt']);
+  if (!raw.waState || Date.now() - (raw.waStateAt || 0) > WA_STATE_MAX_AGE_MS) return 'not_loaded';
+  return raw.waState;
+}
+
+async function recordWaState(state) {
+  if (typeof state !== 'string' || !/^[a-z_]{3,20}$/.test(state)) return;
+  const now = Date.now();
+  // Write when it changed, or now and then so the "age" check above stays fresh.
+  if (state === lastWaStateWrite.state && now - lastWaStateWrite.at < 10000) return;
+  lastWaStateWrite = { state, at: now };
+  await chrome.storage.local.set({ waState: state, waStateAt: now });
+  if (realtime) realtime.sendHeartbeat(); // a changed state matters to the gateway at once
+}
+
+async function whatsAppTab() {
+  const tabs = await chrome.tabs.query(WA_TAB_QUERY);
+  const tab = tabs.find((t) => t.active) || tabs[0];
+  if (!tab) throw new Error('no WhatsApp Web tab');
+  return tab;
+}
+
+async function sendCommandToWhatsApp(command) {
+  const tab = await whatsAppTab();
+  await chrome.tabs.sendMessage(tab.id, { type: 'OUTBOUND_COMMAND', command });
+}
+
+async function openSendUrlInTab(digits) {
+  const tab = await whatsAppTab();
+  await chrome.tabs.update(tab.id, { url: `https://web.whatsapp.com/send?phone=${encodeURIComponent(digits)}` });
+}
+
+// Only a live key opens the line, and only when this WhatsApp number is the vendor's own
+// (otherwise the gateway would refuse anyway).
+function shouldBeOnline(state) {
+  return Boolean(
+    state.apiKey &&
+      state.vendor &&
+      state.vendor.keyKind === 'live' &&
+      !hardPaused(state) &&
+      state.waNumber &&
+      GW.numbersMatch(state.waNumber, state.vendor.whatsappNumber),
+  );
+}
+
+async function getAuth() {
+  const state = await getState();
+  return {
+    apiKey: state.apiKey,
+    deviceId: state.deviceId || (await ensureDeviceId()),
+    waNumber: state.waNumber,
+    version: chrome.runtime.getManifest ? chrome.runtime.getManifest().version : '',
+  };
+}
+
+const outbound = self.WAOutbound
+  ? self.WAOutbound.createOutboundEngine({
+      storage: chrome.storage.local,
+      emit: (event, payload) => (realtime ? realtime.emit(event, payload) : Promise.reject(new Error('no realtime'))),
+      getWaState: currentWaState,
+      runInTab: sendCommandToWhatsApp,
+      openSendUrl: openSendUrlInTab,
+      log: (event, data) => console.log(`[WA Gateway SW] ${event}`, JSON.stringify(data)),
+    })
+  : null;
+
+// The Socket.IO client bundle is missing in some test setups: inbound still works without it.
+const realtime =
+  typeof self.io === 'function' && self.WARealtime
+    ? self.WARealtime.createRealtime({
+        io: self.io,
+        url: GATEWAY_BASE_URL,
+        getAuth,
+        onJob: (job) => {
+          if (outbound) outbound.handleJob(job);
+        },
+        onConnected: () => {
+          if (outbound) outbound.flushOutbox().catch(() => undefined);
+        },
+        onRefused: async (code) => {
+          await recordError(GW.classifyRefusal(code));
+        },
+        getHeartbeat: () => ({
+          waState: lastWaStateWrite.state || 'not_loaded',
+          ...(outbound ? outbound.snapshot() : {}),
+        }),
+        log: (event, data) => console.log(`[WA Gateway SW] ${event}`, JSON.stringify(data)),
+      })
+    : null;
+
+async function syncRealtime() {
+  if (!realtime) return;
+  try {
+    realtime.setWanted(shouldBeOnline(await getState()));
+  } catch (err) {
+    console.warn('[WA Gateway SW] realtime sync failed:', err.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Popup requests
 // ---------------------------------------------------------------------------
 
@@ -234,6 +349,9 @@ async function handleGetStatus() {
     waNumber: state.waNumber,
     waNumberMismatch: Boolean(state.vendor && state.waNumber && !GW.numbersMatch(state.waNumber, state.vendor.whatsappNumber)),
     gatewayEnv: self.WA_GATEWAY_CONFIG.env,
+    realtime: realtime ? realtime.state() : { status: 'off', refusal: '' },
+    waState: await currentWaState(),
+    outbound: outbound ? await outbound.status() : { queueLength: 0, sendingJobId: null, outboxLength: 0, lastResult: null },
   };
 }
 
@@ -312,7 +430,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // From content.js (a WhatsApp Web tab).
     if (message.type === 'WA_LOGGER_AI_REQUEST') task = handleAiRequest(message, sender);
     else if (message.type === 'GET_CONTROL') task = getState().then((state) => ({ active: isActive(state) }));
-    else if (message.type === 'WA_LOGGER_WA_INFO') {
+    else if (message.type === 'WA_GATEWAY_WA_STATE') task = recordWaState(message.state).then(() => ({ ok: true }));
+    else if (message.type === 'WA_GATEWAY_TAB_READY') {
+      task = (outbound ? outbound.onTabReady() : Promise.resolve()).then(() => ({ ok: true }));
+    } else if (message.type === 'WA_GATEWAY_OUTBOUND_EVENT') {
+      task = (outbound ? outbound.onTabEvent(message.event) : Promise.resolve()).then(() => ({ ok: true }));
+    } else if (message.type === 'WA_LOGGER_WA_INFO') {
       const waNumber = GW.digitsOnly(message.waNumber);
       task = waNumber ? chrome.storage.local.set({ waNumber }).then(() => ({ ok: true })) : Promise.resolve({ ok: false });
     }
@@ -332,7 +455,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   if (['apiKey', 'autoReplyEnabled', 'paused', 'lastError'].some((key) => key in changes)) refreshUi();
+  if (['apiKey', 'vendor', 'paused', 'waNumber'].some((key) => key in changes)) syncRealtime();
 });
+
+// MV3 stops an idle service worker. This tick wakes it and re-opens the line if it was lost.
+if (chrome.alarms) {
+  chrome.alarms.create(KEEPALIVE_ALARM, { periodInMinutes: 0.5 });
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name !== KEEPALIVE_ALARM || !realtime) return;
+    syncRealtime().then(() => realtime.ensureConnected());
+  });
+}
 
 chrome.runtime.onInstalled.addListener(async () => {
   await ensureDeviceId();
@@ -343,3 +476,4 @@ chrome.runtime.onInstalled.addListener(async () => {
 
 chrome.runtime.onStartup.addListener(() => refreshUi());
 refreshUi();
+syncRealtime();

@@ -77,7 +77,7 @@ test('group chats are ignored and nothing is posted for them', async () => {
   await page.start();
   await burst(page, '120363000000000000@g.us', 'hello group', { author: { _serialized: CHAT_A } });
   assert.equal(page.requests().length, 0);
-  assert.deepEqual([...new Set(page.posted.map((m) => m.source))].sort(), ['WA_LOGGER_INTERNAL_READY', 'WA_LOGGER_WA_INFO']);
+  assert.deepEqual([...new Set(page.posted.map((m) => m.source))].sort(), ['WA_GATEWAY_WA_STATE', 'WA_LOGGER_INTERNAL_READY', 'WA_LOGGER_WA_INFO']);
 });
 
 test('a reply is sent into the chat once, for the matching request', async () => {
@@ -218,6 +218,6 @@ test('the page exposes no global controller and posts no dashboard messages', as
   assert.equal(page.win.WA_LOGGER, undefined);
   const sources = new Set(page.posted.map((m) => m.source));
   for (const source of sources) {
-    assert.ok(['WA_LOGGER_INTERNAL_READY', 'WA_LOGGER_WA_INFO', 'WA_LOGGER_AI_REQUEST'].includes(source), `unexpected message ${source}`);
+    assert.ok(['WA_LOGGER_INTERNAL_READY', 'WA_LOGGER_WA_INFO', 'WA_LOGGER_AI_REQUEST', 'WA_GATEWAY_WA_STATE'].includes(source), `unexpected message ${source}`);
   }
 });

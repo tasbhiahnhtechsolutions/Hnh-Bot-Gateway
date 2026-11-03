@@ -520,6 +520,11 @@
     if (event.data.source === 'WA_LOGGER_AI_RESPONSE') {
       handleAiResponse(event.data);
     }
+
+    // A message the vendor asked us to send (gateway -> background.js -> content.js -> here)
+    if (event.data.source === 'WA_GATEWAY_OUTBOUND_COMMAND') {
+      handleOutboundCommand(event.data.command);
+    }
   });
 
   // The WhatsApp number this browser profile is logged in with, digits only.
@@ -550,6 +555,7 @@
     window.postMessage({ source: 'WA_LOGGER_WA_INFO', waNumber }, '*');
   }
 
+  let lastSentMsgId = ''; // id of the message sendBackgroundAutoReply handed to WhatsApp last
   let cachedChatCollection = null;
   let cachedSendMsgAction = null;
   let cachedUserPrefs = null;
@@ -676,7 +682,7 @@
   // Background Auto-Reply Send Engine (WAWebMsgKey with Remote)
   // =========================================================================
 
-  async function sendBackgroundAutoReply(chatObj, arg2, arg3, arg4) {
+  async function sendBackgroundAutoReply(chatObj, arg2, arg3, arg4, options = {}) {
     let targetChat = null;
     let chatId = '';
     let replyText = '';
@@ -756,6 +762,8 @@
         };
       }
 
+      lastSentMsgId = msgKey?._serialized || (typeof msgKey?.toString === 'function' ? String(msgKey) : '');
+
       // 7. Build full msgData payload expected by addAndSendMsgToChat
       const ephemeral = typeof targetChat?.getEphemeralSetting === 'function' ? targetChat.getEphemeralSetting() : undefined;
       const msgData = {
@@ -806,9 +814,244 @@
       throw new Error('No direct internal send method available.');
     } catch (primaryErr) {
       console.warn(`[WA Auto-Reply] Primary send method threw for ${chatId}:`, primaryErr?.message || primaryErr);
+      // A job for the vendor must not go through the typing fallback: it cannot tell us whether
+      // the text was really sent, and an OTP must never be sent twice.
+      if (options.strict) return false;
       return await triggerDomComposeFallback(targetChat, replyText);
     }
   }
+
+
+  // =========================================================================
+  // Send lock: one send at a time, so a vendor message and an auto-reply never overlap
+  // =========================================================================
+
+  let sendChain = Promise.resolve();
+  function withSendLock(task) {
+    const run = sendChain.then(task, task);
+    sendChain = run.catch(() => undefined);
+    return run;
+  }
+
+  // =========================================================================
+  // Outbound: send what a vendor asked for (plan section 8.8)
+  //
+  // UNVERIFIED against a real WhatsApp Web build (plan section 11, spike/SPIKE_REPORT.md):
+  //   - the connection state signal (readWaState)
+  //   - "is this number on WhatsApp" (checkNumberOnWhatsApp)
+  //   - creating a chat for a number that is not a contact (createChatForNumber)
+  //   - the invalid-number popup after /send?phone= (invalidNumberPopupShown)
+  //   - reading the ack level of a sent message (waitForAck)
+  // Every probe below tries a few known names and says "I do not know" (null / 'not_loaded')
+  // when none works. None of them pretends: the job then ends as failed or unknown, never as
+  // a made-up "sent". Nothing here has been proven on a real account until the Spike report says so.
+  // =========================================================================
+
+  const OUTBOUND_ACK_WAIT_MS = 15000; // plan 8.8 step 6
+  const WA_READY_WAIT_MS = 20000; // after a page load WhatsApp needs a moment
+  const CHAT_APPEAR_WAIT_MS = 15000; // after /send?phone= opened
+  const WA_STATE_REPORT_MS = 5000;
+  const OUTBOUND_JOB_ID = /^job_[0-9a-f]{16}$/;
+  const WA_MODULE_UNKNOWN = 'WAWeb module not found';
+
+  function requireModule(names) {
+    if (typeof window.require !== 'function') return null;
+    for (const name of names) {
+      try {
+        const mod = window.require(name);
+        if (mod) return mod;
+      } catch (_) { /* try the next name */ }
+    }
+    return null;
+  }
+
+  function mapConnectionState(raw) {
+    const value = String(raw || '').toLowerCase();
+    if (!value) return '';
+    if (['connected', 'open', 'main'].includes(value)) return 'connected';
+    if (['connecting', 'opening', 'pairing', 'unlaunched', 'resuming', 'syncing'].includes(value)) return 'connecting';
+    if (['timeout', 'disconnected', 'offline', 'no_connection', 'proxy_blocked'].includes(value)) return 'offline';
+    if (['unpaired', 'unpaired_idle', 'conflict', 'logout', 'logged_out'].includes(value)) return 'logged_out';
+    return '';
+  }
+
+  // connected | connecting | offline | logged_out | not_loaded
+  function readWaState() {
+    try {
+      const mod = requireModule(['WAWebConnModel', 'WAWebConn', 'WAWebStreamModel']);
+      const conn = mod?.Conn || mod?.default?.Conn || mod?.default || mod;
+      const mapped = mapConnectionState(conn?.state ?? conn?.stream);
+      if (mapped) return mapped;
+    } catch (_) { /* fall through to the page itself */ }
+    try {
+      // The QR code screen means nobody is logged in.
+      if (document.querySelector('canvas[aria-label*="QR" i], div[data-ref][data-ref!=""]')) return 'logged_out';
+      if (document.querySelector('#pane-side')) return 'connected';
+    } catch (_) { /* no DOM access */ }
+    return typeof window.require === 'function' ? 'connecting' : 'not_loaded';
+  }
+
+  let lastReportedWaState = '';
+  function reportWaState() {
+    const state = readWaState();
+    lastReportedWaState = state;
+    window.postMessage({ source: 'WA_GATEWAY_WA_STATE', state }, '*');
+  }
+
+  // true: on WhatsApp. false: WhatsApp said it is not. null: this build gave no clear answer.
+  async function checkNumberOnWhatsApp(digits) {
+    try {
+      const mod = requireModule(['WAWebQueryExistsJob', 'WAWebExistsAction', 'WAWebContactExistsAction']);
+      const query = mod?.queryExists || mod?.queryWidExists || mod?.default?.queryExists;
+      if (typeof query !== 'function') return null;
+      const answer = await query(`${digits}@c.us`);
+      if (answer && (answer.exists === true || answer.wid || answer.jid)) return true;
+      if (answer && answer.exists === false) return false;
+    } catch (_) { /* unclear */ }
+    return null;
+  }
+
+  async function createChatForNumber(jid) {
+    try {
+      const mod = requireModule(['WAWebFindChatAction', 'WAWebChatFindAction']);
+      const find = mod?.findOrCreateLatestChat || mod?.default?.findOrCreateLatestChat;
+      if (typeof find !== 'function') return null;
+      const wid = cachedWidFactory?.createWid?.(jid)
+        || requireModule(['WAWebWidFactory'])?.createWid?.(jid)
+        || { _serialized: jid };
+      const found = await find(wid);
+      const chat = found?.chat || found;
+      return chat?.id ? chat : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function invalidNumberPopupShown() {
+    try {
+      const dialogs = document.querySelectorAll('[role="dialog"], [data-animate-modal-popup], [data-testid="popup"]');
+      for (const dialog of dialogs) {
+        if (/invalid|not on whatsapp|isn.t on whatsapp|not a whatsapp/i.test(dialog.textContent || '')) return true;
+      }
+    } catch (_) { /* no DOM */ }
+    return false;
+  }
+
+  async function waitFor(check, timeoutMs, stepMs = 250) {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      try {
+        const value = await check();
+        if (value) return value;
+      } catch (_) { /* keep waiting */ }
+      if (Date.now() >= deadline) return null;
+      await sleep(stepMs);
+    }
+  }
+
+  function findSentMessage(chat, msgId) {
+    if (!chat || !msgId) return null;
+    try {
+      const direct = chat.msgs?.get?.(msgId);
+      if (direct) return direct;
+      const models = chat.msgs?.getModelsArray?.() || chat.models || [];
+      return models.find((m) => m?.id?._serialized === msgId || String(m?.id) === msgId) || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // The ack level (1 = reached WhatsApp's server). Returns 0 when it did not show up in time
+  // or this build does not expose it: the job then stays "unknown", it is never called "sent".
+  async function waitForAck(chat, msgId) {
+    const level = await waitFor(() => {
+      const msg = findSentMessage(chat, msgId);
+      const ack = Number(msg?.ack);
+      return Number.isFinite(ack) && ack >= 1 ? ack : 0;
+    }, OUTBOUND_ACK_WAIT_MS);
+    return level || 0;
+  }
+
+  function outboundEvent(job, event, extra = {}) {
+    window.postMessage(
+      { source: 'WA_GATEWAY_OUTBOUND_EVENT', event: { jobId: job.jobId, attempt: job.attempt, event, ...extra } },
+      '*',
+    );
+  }
+
+  const outboundFailed = (job, errorCode) => outboundEvent(job, 'result', { status: 'failed', errorCode });
+
+  async function runOutboundJob(job, resume) {
+    const jid = `${job.to}@c.us`;
+
+    // WhatsApp must be usable (after a reload it needs a few seconds).
+    const ready = await waitFor(() => readWaState() === 'connected' && getChatCollection(), WA_READY_WAIT_MS);
+    if (!ready) {
+      outboundFailed(job, 'SEND_FAILED'); // nothing was sent
+      return;
+    }
+
+    if (!resume && (await checkNumberOnWhatsApp(job.to)) === false) {
+      outboundFailed(job, 'NOT_ON_WHATSAPP');
+      return;
+    }
+
+    let chat = findChatModel(jid);
+    if (!chat && !resume) chat = await createChatForNumber(jid);
+    if (!chat && !resume) {
+      // Plan 8.8 step 5c: open /send?phone= instead. The page reloads, background.js resumes us.
+      outboundEvent(job, 'url_fallback');
+      return;
+    }
+    if (!chat) {
+      // We are the page that /send?phone= opened.
+      chat = await waitFor(() => findChatModel(jid) || (invalidNumberPopupShown() ? 'invalid' : null), CHAT_APPEAR_WAIT_MS);
+      if (chat === 'invalid') {
+        outboundFailed(job, 'NOT_ON_WHATSAPP');
+        return;
+      }
+      if (!chat) {
+        outboundFailed(job, 'SEND_FAILED');
+        return;
+      }
+    }
+
+    // From here on a reload or a crash means "maybe sent": tell background.js first.
+    outboundEvent(job, 'sending');
+    lastSentMsgId = '';
+    const accepted = await sendBackgroundAutoReply(chat, jid, job.message, null, { strict: true });
+    if (!accepted) {
+      outboundFailed(job, 'SEND_FAILED');
+      return;
+    }
+    const ack = await waitForAck(chat, lastSentMsgId);
+    if (ack >= 1) outboundEvent(job, 'result', { status: 'sent', waAck: ack });
+    else outboundEvent(job, 'no_ack'); // not proven: never call it sent
+  }
+
+  function handleOutboundCommand(command) {
+    const job = command?.job;
+    if (
+      command?.type !== 'SEND' ||
+      !job ||
+      !OUTBOUND_JOB_ID.test(String(job.jobId)) ||
+      !Number.isInteger(job.attempt) ||
+      !/^\d{8,15}$/.test(String(job.to)) ||
+      typeof job.message !== 'string' ||
+      !job.message
+    ) {
+      console.warn('[WA Gateway] Ignored a malformed outbound command.');
+      return;
+    }
+    const safeJob = { jobId: job.jobId, attempt: job.attempt, to: String(job.to), message: job.message };
+    withSendLock(() => runOutboundJob(safeJob, Boolean(command.resume))).catch((err) => {
+      console.warn('[WA Gateway] Outbound job crashed:', err?.message || err);
+      outboundFailed(safeJob, 'SEND_FAILED');
+    });
+  }
+
+  setInterval(reportWaState, WA_STATE_REPORT_MS);
+  setTimeout(reportWaState, 500);
 
   // =========================================================================
   // Multi-Bubble AI Reply Sequencer
@@ -863,7 +1106,7 @@
       }
 
       console.log(`[WA Auto-Reply] Sending bubble (${i + 1}/${replies.length}) to ${chatId}: "${bubble}"`);
-      const sent = await sendBackgroundAutoReply(targetChat, chatId, bubble, lastMsg);
+      const sent = await withSendLock(() => sendBackgroundAutoReply(targetChat, chatId, bubble, lastMsg));
       console.log(`[WA Auto-Reply] Bubble ${i + 1}/${replies.length} result: ${sent ? 'SENT' : 'FAILED'}`);
       if (!sent) {
         console.warn(`[WA Auto-Reply] Bubble ${i + 1}/${replies.length} was NOT sent — check the send error above.`);

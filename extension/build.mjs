@@ -18,7 +18,18 @@ const SOURCE_DIR = dirname(fileURLToPath(import.meta.url));
 const ENVS = ['dev', 'staging', 'prod'];
 const DEV_DEFAULT_URL = 'http://localhost:8000';
 const URL_ENV_VARS = { staging: 'GATEWAY_STAGING_URL', prod: 'GATEWAY_PROD_URL' };
-const COPIED_FILES = ['background.js', 'content.js', 'injected.js', 'gateway-client.js', 'popup.html', 'popup.js'];
+const COPIED_FILES = [
+  'background.js',
+  'content.js',
+  'injected.js',
+  'gateway-client.js',
+  'outbound.js',
+  'realtime.js',
+  'popup.html',
+  'popup.js',
+  'vendor/socket.io.min.js',
+  'vendor/socket.io.LICENSE',
+];
 const LOCAL_MARKERS = /localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1\]/i;
 
 export class BuildError extends Error {}
@@ -81,14 +92,19 @@ export function build({ env, url, outRoot = join(SOURCE_DIR, 'dist'), sourceDir 
 
   rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
-  for (const file of COPIED_FILES) cpSync(join(sourceDir, file), join(outDir, file));
+  for (const file of COPIED_FILES) {
+    mkdirSync(dirname(join(outDir, file)), { recursive: true });
+    cpSync(join(sourceDir, file), join(outDir, file));
+  }
 
   const config = `self.WA_GATEWAY_CONFIG = ${JSON.stringify({ env, GATEWAY_BASE_URL: origin }, null, 2)};\n`;
   writeFileSync(join(outDir, 'config.js'), config);
   writeFileSync(join(outDir, 'manifest.json'), `${JSON.stringify(buildManifest(base, env, origin), null, 2)}\n`);
 
   if (env !== 'dev') {
-    const offenders = listFiles(outDir).filter((file) => LOCAL_MARKERS.test(readFileSync(file, 'utf8')));
+    // vendor/ is third-party code (it mentions localhost in its own URL parsing): not ours to police.
+    const ours = listFiles(outDir).filter((file) => !file.startsWith(join(outDir, 'vendor')));
+    const offenders = ours.filter((file) => LOCAL_MARKERS.test(readFileSync(file, 'utf8')));
     if (offenders.length > 0) {
       rmSync(outDir, { recursive: true, force: true });
       throw new BuildError(`${env} build must not mention localhost, found in: ${offenders.join(', ')}`);

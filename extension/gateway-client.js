@@ -98,6 +98,19 @@
     return { severity: 'yellow', lastError: `Gateway rejected the request (${status} ${code}).`, pause: null };
   }
 
+  // The live line (Socket.IO) refused the plugin with a code. Same shape as classifyHttpFailure.
+  function classifyRefusal(code) {
+    const messages = {
+      INVALID_KEY: 'API key rejected (invalid or revoked)',
+      VENDOR_SUSPENDED: 'This vendor account is suspended. Contact support.',
+      NUMBER_MISMATCH: 'This WhatsApp number does not belong to this API key.',
+      TEST_KEY_NOT_ALLOWED: 'A test key cannot receive messages. Use the live key.',
+      INVALID_DEVICE: 'The gateway did not accept this installation. Reinstall the extension.',
+    };
+    const message = messages[code] || 'The gateway refused the live connection.';
+    return { severity: 'red', lastError: message, pause: { code, message } };
+  }
+
   function classifyNetworkFailure(err) {
     if (err && err.name === 'AbortError') {
       return { severity: 'yellow', lastError: `No answer from the gateway within ${AI_REPLY_TIMEOUT_MS / 1000}s. No reply sent.`, pause: null };
@@ -144,6 +157,7 @@
     authHeaders,
     classifyHttpFailure,
     classifyNetworkFailure,
+    classifyRefusal,
     badgeFor,
     parseRetryAfter,
     errorCodeFromBody,

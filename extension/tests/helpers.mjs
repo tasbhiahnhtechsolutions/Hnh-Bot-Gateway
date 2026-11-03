@@ -18,6 +18,10 @@ const readSource = (name) => readFileSync(join(EXTENSION_DIR, name), 'utf8');
 const plain = (value) => (value === undefined ? value : JSON.parse(JSON.stringify(value)));
 
 export const flush = () => new Promise((resolve) => setImmediate(resolve));
+// Long promise chains (waitFor loops) need several turns before they register their next timer.
+const flushDeep = async () => {
+  for (let i = 0; i < 5; i += 1) await flush();
+};
 
 export function jsonResponse(status, body, headers = {}) {
   return {
@@ -33,7 +37,7 @@ export function jsonResponse(status, body, headers = {}) {
 // background.js
 // ---------------------------------------------------------------------------
 
-export function makeBackground({ fetchImpl, storage = {}, tabs = [{ id: 7 }], config } = {}) {
+export function makeBackground({ fetchImpl, storage = {}, tabs = [{ id: 7 }], config, io } = {}) {
   const store = { ...storage };
   const changeListeners = [];
   const handlers = {};
@@ -42,6 +46,8 @@ export function makeBackground({ fetchImpl, storage = {}, tabs = [{ id: 7 }], co
   const timerDelays = [];
   const badge = { text: '', color: '' };
   const spies = { setInterval: 0 };
+  const alarms = { created: [], handler: null };
+  const tabUpdates = [];
 
   const pick = (keys) => {
     const names = keys == null ? Object.keys(store) : [].concat(keys);
@@ -68,6 +74,7 @@ export function makeBackground({ fetchImpl, storage = {}, tabs = [{ id: 7 }], co
     },
     runtime: {
       getURL: (path = '') => `chrome-extension://testid/${path}`,
+      getManifest: () => ({ version: '2.0.0' }),
       onMessage: { addListener: (fn) => { handlers.message = fn; } },
       onInstalled: { addListener: (fn) => { handlers.installed = fn; } },
       onStartup: { addListener: (fn) => { handlers.startup = fn; } },
@@ -79,6 +86,11 @@ export function makeBackground({ fetchImpl, storage = {}, tabs = [{ id: 7 }], co
     tabs: {
       query: async () => tabs,
       sendMessage: async (tabId, message) => { sentToTabs.push({ tabId, message: plain(message) }); },
+      update: async (tabId, props) => { tabUpdates.push({ tabId, ...props }); },
+    },
+    alarms: {
+      create: (name, info) => alarms.created.push({ name, info }),
+      onAlarm: { addListener: (fn) => { alarms.handler = fn; } },
     },
   };
 
@@ -88,7 +100,8 @@ export function makeBackground({ fetchImpl, storage = {}, tabs = [{ id: 7 }], co
     crypto: globalThis.crypto,
     AbortController,
     URL,
-    setInterval: () => { spies.setInterval += 1; },
+    setInterval: () => { spies.setInterval += 1; return spies.setInterval; },
+    clearInterval: () => {},
     clearTimeout,
     setTimeout: (fn, ms) => {
       timerDelays.push(ms);
@@ -102,7 +115,11 @@ export function makeBackground({ fetchImpl, storage = {}, tabs = [{ id: 7 }], co
   context.self = context;
   context.importScripts = (...files) => {
     for (const file of files) {
-      if (file === 'config.js' && config) context.WA_GATEWAY_CONFIG = config;
+      if (file.startsWith('vendor/')) {
+        // The real socket.io client needs a network; tests pass a fake through the `io` option.
+        if (io) context.io = io;
+        else throw new Error('vendor bundle not loaded in tests');
+      } else if (file === 'config.js' && config) context.WA_GATEWAY_CONFIG = config;
       else vm.runInContext(readSource(file), context, { filename: file });
     }
   };
@@ -114,7 +131,7 @@ export function makeBackground({ fetchImpl, storage = {}, tabs = [{ id: 7 }], co
       if (keepOpen !== true) reject(new Error(`message ${message.type} was not handled`));
     });
 
-  return { store, send, sentToTabs, fetchCalls, timerDelays, badge, spies, handlers, context };
+  return { store, send, sentToTabs, fetchCalls, timerDelays, badge, spies, handlers, context, alarms, tabUpdates };
 }
 
 // ---------------------------------------------------------------------------
@@ -129,6 +146,17 @@ export function makeInjected({ ownNumber = '923001112222' } = {}) {
   const msgHandlers = [];
   const chats = new Map();
   const sent = []; // {chatId, text}
+  // Knobs for the outbound tests (what this pretend WhatsApp does when the plugin sends for a vendor).
+  // Nothing here is verified against a real WhatsApp Web build; see spike/SPIKE_REPORT.md.
+  const fake = {
+    connState: 'CONNECTED',
+    ackLevel: 1, // 0 = the ack never comes
+    ackDelayMs: 200,
+    sendFails: false,
+    exists: null, // async (jid) => answer, or null when this build has no such function
+    primaryCreate: false, // does the "create chat" function exist and work
+    popup: '', // text of a dialog on the page
+  };
 
   class FakeDate extends Date {
     constructor(...args) {
@@ -145,22 +173,37 @@ export function makeInjected({ ownNumber = '923001112222' } = {}) {
     WAWebMsgCollection: { MsgCollection: { on: (event, handler) => event === 'add' && msgHandlers.push(handler) } },
     WAWebUserPrefsMeUser: { getMaybeMePnUser: () => (ownNumber ? { user: ownNumber, _serialized: `${ownNumber}@c.us` } : null) },
     WAWebChatCollection: { ChatCollection: { get: (id) => chats.get(id) } },
+    WAWebConnModel: { Conn: { get state() { return fake.connState; } } },
     WAWebSendMsgChatAction: {
       addAndSendMsgToChat: async (chat, msgData) => {
+        if (fake.sendFails) throw new Error('fake send failure');
         sent.push({ chatId: chat.id._serialized, text: msgData.body });
+        const model = { id: msgData.id, body: msgData.body, ack: 0 };
+        chat.models.push(model);
+        if (fake.ackLevel > 0) timers.push({ fn: () => { model.ack = fake.ackLevel; }, at: clock.now + fake.ackDelayMs });
       },
     },
   };
 
   const win = {
-    require: (name) => modules[name],
+    require: (name) => {
+      if (name === 'WAWebQueryExistsJob') return fake.exists ? { queryExists: fake.exists } : undefined;
+      if (name === 'WAWebFindChatAction') {
+        return fake.primaryCreate ? { findOrCreateLatestChat: async (wid) => addChat(wid._serialized) } : undefined;
+      }
+      return modules[name];
+    },
     postMessage: (data) => posted.push(plain(data)),
     addEventListener: (type, fn) => type === 'message' && listeners.push(fn),
   };
 
   const context = vm.createContext({
     window: win,
-    document: { readyState: 'complete', querySelector: () => null },
+    document: {
+      readyState: 'complete',
+      querySelector: () => null,
+      querySelectorAll: () => (fake.popup ? [{ textContent: fake.popup }] : []),
+    },
     console: { log() {}, warn() {}, error() {} },
     crypto: globalThis.crypto,
     Blob,
@@ -182,6 +225,7 @@ export function makeInjected({ ownNumber = '923001112222' } = {}) {
 
   async function advance(ms) {
     const target = clock.now + ms;
+    await flushDeep(); // let a just-delivered message register its first timer
     for (;;) {
       timers.sort((a, b) => a.at - b.at);
       const next = timers[0];
@@ -189,10 +233,10 @@ export function makeInjected({ ownNumber = '923001112222' } = {}) {
       timers.shift();
       clock.now = Math.max(clock.now, next.at);
       next.fn();
-      await flush();
+      await flushDeep();
     }
     clock.now = target;
-    await flush();
+    await flushDeep();
   }
 
   const deliver = (data) => listeners.forEach((fn) => fn({ source: win, data }));
@@ -200,10 +244,15 @@ export function makeInjected({ ownNumber = '923001112222' } = {}) {
 
   let counter = 0;
   function addChat(chatId) {
+    const models = [];
     const chat = {
       id: { _serialized: chatId },
       formattedTitle: `Customer ${chatId.split('@')[0]}`,
-      msgs: { getModelsArray: () => [] },
+      models,
+      msgs: {
+        getModelsArray: () => models,
+        get: (id) => models.find((m) => m.id?._serialized === id),
+      },
     };
     chats.set(chatId, chat);
     return chat;
@@ -231,5 +280,11 @@ export function makeInjected({ ownNumber = '923001112222' } = {}) {
     if (active) deliver({ source: 'WA_LOGGER_CONTROL', active: true });
   }
 
-  return { win, clock, posted, sent, advance, deliver, requests, incoming, addChat, start, hooked: () => msgHandlers.length > 0 };
+  const outboundEvents = () => posted.filter((m) => m.source === 'WA_GATEWAY_OUTBOUND_EVENT').map((m) => m.event);
+  const command = (job, resume = false) => deliver({ source: 'WA_GATEWAY_OUTBOUND_COMMAND', command: { type: 'SEND', job, resume } });
+
+  return {
+    win, clock, posted, sent, advance, deliver, requests, incoming, addChat, start, fake, chats,
+    outboundEvents, command, hooked: () => msgHandlers.length > 0,
+  };
 }

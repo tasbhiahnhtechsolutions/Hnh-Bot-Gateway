@@ -10,7 +10,12 @@ const outRoot = mkdtempSync(join(tmpdir(), 'wa-ext-build-'));
 test.after(() => rmSync(outRoot, { recursive: true, force: true }));
 
 const readJson = (file) => JSON.parse(readFileSync(file, 'utf8'));
-const allText = (dir) => readdirSync(dir).map((name) => readFileSync(join(dir, name), 'utf8')).join('\n');
+// Our own files (the bundled third-party socket.io client in vendor/ is not ours to scan).
+const allText = (dir) =>
+  readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => readFileSync(join(dir, entry.name), 'utf8'))
+    .join('\n');
 
 test('dev build points at localhost and allows only WhatsApp Web plus the gateway', () => {
   const { outDir, origin } = build({ env: 'dev', outRoot, envVars: {} });
@@ -18,7 +23,7 @@ test('dev build points at localhost and allows only WhatsApp Web plus the gatewa
   const manifest = readJson(join(outDir, 'manifest.json'));
   assert.equal(manifest.manifest_version, 3);
   assert.deepEqual(manifest.host_permissions, ['https://web.whatsapp.com/*', 'http://localhost:8000/*']);
-  assert.deepEqual(manifest.permissions, ['storage']);
+  assert.deepEqual(manifest.permissions, ['storage', 'alarms']);
   assert.match(manifest.name, /\(dev\)$/);
   assert.match(readFileSync(join(outDir, 'config.js'), 'utf8'), /"GATEWAY_BASE_URL": "http:\/\/localhost:8000"/);
 });
@@ -46,6 +51,14 @@ test('the build output has no dashboard, logging or contact-sync leftovers', () 
   for (const forbidden of ['167.114.96.66', '/log-message', '/api/sync-contacts', '/api/poll-commands', '/api/command-result', 'syncOneOnOneContacts', 'WA_LOGGER_HISTORY_RESULT', 'WA_LOGGER_FETCH_HISTORY']) {
     assert.ok(!text.includes(forbidden), `${forbidden} is still in the build`);
   }
+});
+
+test('the build ships the bundled socket.io client and the outbound files', () => {
+  const { outDir } = build({ env: 'prod', url: 'https://api.example.com', outRoot, envVars: {} });
+  for (const file of ['outbound.js', 'realtime.js', 'vendor/socket.io.min.js', 'vendor/socket.io.LICENSE']) {
+    assert.ok(readdirSync(join(outDir, ...file.split('/').slice(0, -1))).includes(file.split('/').pop()), file);
+  }
+  assert.match(readFileSync(join(outDir, 'vendor', 'socket.io.min.js'), 'utf8'), /Socket\.IO v4/);
 });
 
 test('the build refuses unsafe or missing gateway URLs', () => {

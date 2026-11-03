@@ -56,6 +56,13 @@
       return;
     }
 
+    // A job to send for the vendor (background.js -> page)
+    if (msg.type === 'OUTBOUND_COMMAND') {
+      window.postMessage({ source: 'WA_GATEWAY_OUTBOUND_COMMAND', command: msg.command }, '*');
+      sendResponse({ forwarded: true });
+      return;
+    }
+
     // Reply bubbles from the gateway (via background.js)
     if (msg.type === 'WA_LOGGER_AI_RESPONSE') {
       window.postMessage({ source: 'WA_LOGGER_AI_RESPONSE', ...(msg.data || {}) }, '*');
@@ -95,6 +102,20 @@
     if (data.source === 'WA_LOGGER_INTERNAL_READY') {
       // injected.js just finished hooking: tell it the current control state.
       requestControl();
+      // A page that just (re)loaded: a job waiting for it (/send?phone=) may go on.
+      safeSendMessage({ type: 'WA_GATEWAY_TAB_READY' });
+      return;
+    }
+
+    // What WhatsApp Web is doing (connected, logged out, ...), reported every few seconds
+    if (data.source === 'WA_GATEWAY_WA_STATE') {
+      if (typeof data.state === 'string') safeSendMessage({ type: 'WA_GATEWAY_WA_STATE', state: data.state });
+      return;
+    }
+
+    // Progress and result of a job to send (sending, url_fallback, result, no_ack)
+    if (data.source === 'WA_GATEWAY_OUTBOUND_EVENT' && data.event && typeof data.event === 'object') {
+      safeSendMessage({ type: 'WA_GATEWAY_OUTBOUND_EVENT', event: data.event });
       return;
     }
 
