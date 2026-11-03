@@ -87,3 +87,75 @@ async def record_login_failure(redis: Redis, email: str, client_ip: str) -> None
 
 async def clear_login_failures(redis: Redis, email: str) -> None:
     await redis.delete(_account_key(email))
+
+
+# --- two-factor ------------------------------------------------------------------------------
+
+PENDING_LOGIN_SECONDS = 5 * 60
+SETUP_SECONDS = 10 * 60
+MAX_CODE_ATTEMPTS = 5
+
+
+def _pending_key(token: str) -> str:
+    return "admin2fa:pending:" + hashlib.sha256(token.encode()).hexdigest()
+
+
+async def create_pending_login(redis: Redis, admin_id: uuid.UUID) -> str:
+    """The password was right but a code is still needed. The token is only good for this step."""
+    token = secrets.token_urlsafe(32)
+    await redis.set(
+        _pending_key(token),
+        json.dumps({"admin_id": str(admin_id), "tries": 0}),
+        ex=PENDING_LOGIN_SECONDS,
+    )
+    return token
+
+
+async def peek_pending_login(redis: Redis, token: str | None) -> uuid.UUID | None:
+    if not token or len(token) > 100:
+        return None
+    raw = await redis.get(_pending_key(token))
+    if raw is None:
+        return None
+    try:
+        return uuid.UUID(json.loads(raw)["admin_id"])
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+async def count_code_attempt(redis: Redis, token: str) -> bool:
+    """False when the token has used up its tries (it is deleted then)."""
+    key = _pending_key(token)
+    raw = await redis.get(key)
+    if raw is None:
+        return False
+    data = json.loads(raw)
+    data["tries"] += 1
+    if data["tries"] >= MAX_CODE_ATTEMPTS:
+        await redis.delete(key)
+        return False
+    ttl = await redis.ttl(key)
+    await redis.set(key, json.dumps(data), ex=max(ttl, 1))
+    return True
+
+
+async def finish_pending_login(redis: Redis, token: str) -> None:
+    await redis.delete(_pending_key(token))
+
+
+async def claim_code_step(redis: Redis, admin_id: uuid.UUID, step: int) -> bool:
+    """A code works once: False when this admin already used this 30-second step."""
+    return bool(await redis.set(f"admin2fa:used:{admin_id}:{step}", "1", ex=120, nx=True))
+
+
+async def save_setup_secret(redis: Redis, admin_id: uuid.UUID, secret: str) -> None:
+    await redis.set(f"admin2fa:setup:{admin_id}", secret, ex=SETUP_SECONDS)
+
+
+async def load_setup_secret(redis: Redis, admin_id: uuid.UUID) -> str | None:
+    raw = await redis.get(f"admin2fa:setup:{admin_id}")
+    return raw.decode() if raw else None
+
+
+async def clear_setup_secret(redis: Redis, admin_id: uuid.UUID) -> None:
+    await redis.delete(f"admin2fa:setup:{admin_id}")

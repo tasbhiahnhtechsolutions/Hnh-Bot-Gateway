@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     # The address is the one the app sees, so behind a proxy it must forward the real IP.
     admin_ip_allowlist: str = ""
     admin_session_hours: int = Field(default=8, ge=1, le=72)
+    # true: an admin without 2FA can only open the account page until they set it up.
+    admin_require_2fa: bool = False
 
     # Outbound (plan section 8). A vendor whose queue holds this many open jobs gets 503 QUEUE_FULL;
     # more than this many API calls per minute get 429 RATE_LIMITED.

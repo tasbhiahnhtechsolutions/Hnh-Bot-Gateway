@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}My account{% endblock %}
+{% block content %}
+<h1>My account</h1>
+<div class="card">
+  <table>
+    <tr><th>Email</th><td>{{ admin.email }}</td></tr>
+    <tr><th>Role</th><td>{{ admin.role }}</td></tr>
+    <tr><th>Two-factor login</th><td><span class="badge {{ 'ok' if enabled else 'bad' }}">{{ 'on' if enabled else 'off' }}</span></td></tr>
+  </table>
+</div>
+
+{% if enabled %}
+<div class="card">
+  <h2>Turn two-factor login off</h2>
+  <form method="post" action="/admin/account/2fa/disable" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <label for="code_off">Current code</label>
+    <input id="code_off" type="text" name="code" inputmode="numeric" maxlength="7" required>
+    <p><button class="danger" type="submit">Turn off</button></p>
+  </form>
+</div>
+{% elif secret %}
+<div class="card">
+  <h2>Finish setting up</h2>
+  <p>Add this account to your authenticator app (type the key in by hand, or open the link on your phone), then type the code it shows.</p>
+  <p>Key: <span class="mono">{{ secret }}</span></p>
+  <p class="hint mono">{{ uri }}</p>
+  <form method="post" action="/admin/account/2fa/enable" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <label for="code_on">Code from the app</label>
+    <input id="code_on" type="text" name="code" inputmode="numeric" maxlength="7" required>
+    <p><button type="submit">Turn on</button></p>
+  </form>
+</div>
+{% else %}
+<div class="card">
+  <h2>Two-factor login</h2>
+  <p>{% if required %}This gateway requires it for every admin.{% else %}Adds a code from your phone to every login.{% endif %}</p>
+  <form method="post" action="/admin/account/2fa/start">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <button type="submit">Set up</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}
