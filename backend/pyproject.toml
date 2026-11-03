@@ -76,8 +76,10 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
+addopts = "-m 'not chaos'"  # chaos tests need the Toxiproxy image: `make chaos`
 markers = [
     "integration: needs Docker (Postgres/Redis via testcontainers)",
+    "chaos: breaks the network on purpose with Toxiproxy (make chaos)",
 ]
 
 [tool.coverage.run]

@@ -2,129 +2,15 @@
 (plan 8.4, 8.9, 14.4). A real python-socketio client plays the plugin."""
 
 import asyncio
-import socket
-from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass, field, replace
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import pytest
-import socketio
-import uvicorn
 from sqlalchemy import select
 
 from app.models.outbound import Device
-from app.realtime.emitter import ServerEmitter
 from app.services import presence
-from app.services.vendors import CreatedVendor
-from tests.integration.conftest import Api, MakeApi
-
-
-def free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
-class Refused(Exception):
-    """The hub said no; the message is its refusal code."""
-
-
-@dataclass
-class Plugin:
-    """A fake plugin: remembers every job it receives."""
-
-    client: socketio.AsyncClient
-    jobs: list[dict[str, Any]] = field(default_factory=list)
-    kicked: asyncio.Event = field(default_factory=asyncio.Event)
-    refusal: list[str] = field(default_factory=list)
-
-    async def wait_for_jobs(self, count: int, timeout_seconds: float = 5.0) -> None:
-        async with asyncio.timeout(timeout_seconds):
-            while len(self.jobs) < count:  # noqa: ASYNC110
-                await asyncio.sleep(0.02)
-
-    async def ack(self, job_id: str, attempt: int) -> dict[str, Any]:
-        reply = await self.client.call("job_ack", {"jobId": job_id, "attempt": attempt}, timeout=5)
-        return dict(reply)
-
-    async def result(self, job_id: str, attempt: int, status: str, **extra: Any) -> dict[str, Any]:
-        body = {"jobId": job_id, "attempt": attempt, "status": status, **extra}
-        return dict(await self.client.call("job_result", body, timeout=5))
-
-    async def heartbeat(self, wa_state: str = "connected") -> dict[str, Any]:
-        return dict(await self.client.call("heartbeat", {"waState": wa_state}, timeout=5))
-
-
-@dataclass
-class Live:
-    api: Api
-    url: str
-    clients: list[socketio.AsyncClient] = field(default_factory=list)
-
-    async def connect(
-        self,
-        created: CreatedVendor,
-        *,
-        key: str | None = None,
-        device: str = "device-0001",
-        **auth: Any,
-    ) -> Plugin:
-        client = socketio.AsyncClient(reconnection=False)
-        plugin = Plugin(client)
-
-        @client.on("job")  # type: ignore[untyped-decorator]
-        async def _job(data: dict[str, Any]) -> None:
-            plugin.jobs.append(data)
-
-        @client.on("connect_error")  # type: ignore[untyped-decorator]
-        async def _refused(data: Any) -> None:
-            plugin.refusal.append(str(data))
-
-        @client.on("disconnect")  # type: ignore[untyped-decorator]
-        async def _gone() -> None:
-            plugin.kicked.set()
-
-        payload = {
-            "apiKey": key or created.secrets.live_key,
-            "deviceId": device,
-            "waNumber": created.vendor.phone_e164,
-            "version": "0.2.0",
-            **auth,
-        }
-        try:
-            await client.connect(self.url, auth=payload, socketio_path="/socket.io", wait_timeout=5)
-        except socketio.exceptions.ConnectionError as exc:
-            raise Refused(" ".join(plugin.refusal) or str(exc)) from exc
-        self.clients.append(client)
-        return plugin
-
-    async def refused(self, created: CreatedVendor, **kwargs: Any) -> str:
-        with pytest.raises(Refused) as info:
-            await self.connect(created, **kwargs)
-        return str(info.value)
-
-
-@pytest.fixture
-async def live(make_api: MakeApi) -> AsyncIterator[Live]:
-    api = await make_api()
-    hub = api.app.state.hub
-    # Jobs go over the real socket now; Celery stays a recorder.
-    api.ob.rt = replace(api.ob.rt, emitter=ServerEmitter(hub.sio))
-    api.app.state.runtime = api.ob.rt
-    port = free_port()
-    server = uvicorn.Server(
-        uvicorn.Config(api.app, host="127.0.0.1", port=port, log_level="error", lifespan="off")
-    )
-    task = asyncio.create_task(server.serve())
-    while not server.started:  # noqa: ASYNC110
-        await asyncio.sleep(0.02)
-    state = Live(api, f"http://127.0.0.1:{port}")
-    yield state
-    for client in state.clients:
-        if client.connected:
-            await client.disconnect()
-    server.should_exit = True
-    await task
+from tests.integration.live_support import Live
 
 
 async def eventually(check: Callable[[], Awaitable[bool]], timeout_seconds: float = 5.0) -> None:

@@ -73,7 +73,13 @@ async def message_to_customer(
     else:
         response.status_code = 200
 
-    online = True if is_test else await presence.is_online(runtime.redis, vendor_id)
+    online = True
+    if not is_test:
+        try:
+            online = await presence.is_online(runtime.redis, vendor_id)
+        except Exception as exc:  # the job is already saved: do not answer 503 for a status flag
+            online = False
+            log.warning("presence_check_failed", error_type=type(exc).__name__)
     return {
         "success": True,
         "jobId": job.id,

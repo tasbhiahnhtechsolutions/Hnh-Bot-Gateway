@@ -3,6 +3,7 @@
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from redis.exceptions import RedisError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 _HTTP_CODES = {404: "NOT_FOUND", 405: "METHOD_NOT_ALLOWED"}
@@ -51,6 +52,13 @@ def http_error_handler(_request: Request, exc: Exception) -> JSONResponse:
     return error_response(exc.status_code, code, str(exc.detail), dict(exc.headers or {}))
 
 
+def _redis_down_handler(_request: Request, _exc: Exception) -> JSONResponse:
+    # Nothing was accepted: the caller may try again in a moment (plan section 14.5).
+    return error_response(
+        503, "TEMPORARILY_UNAVAILABLE", "service is busy, try again", {"Retry-After": "5"}
+    )
+
+
 def _unhandled_handler(_request: Request, _exc: Exception) -> JSONResponse:
     return error_response(500, "INTERNAL_ERROR", "unexpected error")
 
@@ -59,4 +67,6 @@ def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ApiError, api_error_handler)
     app.add_exception_handler(RequestValidationError, _validation_handler)
     app.add_exception_handler(StarletteHTTPException, http_error_handler)
+    app.add_exception_handler(RedisError, _redis_down_handler)
+    app.add_exception_handler(OSError, _redis_down_handler)  # e.g. connection refused
     app.add_exception_handler(Exception, _unhandled_handler)

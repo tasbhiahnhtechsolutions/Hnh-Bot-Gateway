@@ -1,14 +1,16 @@
 """Real Postgres and Redis via testcontainers (needs Docker). Migrations build the schema."""
 
+import asyncio
 import json
 import os
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import httpx
 import pytest
+import uvicorn
 from alembic import command
 from alembic.config import Config
 from fastapi import FastAPI
@@ -25,10 +27,12 @@ from testcontainers.community.redis import RedisContainer
 from app.core.config import AppEnv, Settings
 from app.core.security import SecretBox
 from app.main import create_app
+from app.realtime.emitter import ServerEmitter
 from app.schemas.vendor import VendorCreate
 from app.services.inbound import InboundDeps
 from app.services.runtime import Runtime
 from app.services.vendors import CreatedVendor, create_vendor
+from tests.integration.live_support import Live, free_port
 from tests.integration.outbound_support import (
     FakeClock,
     InlineScheduler,
@@ -229,3 +233,27 @@ async def make_api(migrated_url: str, redis_url: str, clean_db: None) -> AsyncIt
         await api.client.aclose()
         await api.app.state.redis.aclose()
         await api.app.state.engine.dispose()
+
+
+@pytest.fixture
+async def live(make_api: MakeApi) -> AsyncIterator[Live]:
+    """The app served over real TCP, with jobs delivered through the real Socket.IO hub. Celery
+    stays a recorder unless a test swaps in a real scheduler."""
+    api = await make_api()
+    hub = api.app.state.hub
+    api.ob.rt = replace(api.ob.rt, emitter=ServerEmitter(hub.sio))
+    api.app.state.runtime = api.ob.rt
+    port = free_port()
+    server = uvicorn.Server(
+        uvicorn.Config(api.app, host="127.0.0.1", port=port, log_level="error", lifespan="off")
+    )
+    task = asyncio.create_task(server.serve())
+    while not server.started:  # noqa: ASYNC110
+        await asyncio.sleep(0.02)
+    state = Live(api, f"http://127.0.0.1:{port}")
+    yield state
+    for client in state.clients:
+        if client.connected:
+            await client.disconnect()
+    server.should_exit = True
+    await task

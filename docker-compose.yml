@@ -1,4 +1,4 @@
-# Dev stack (plan section 3.2). Celery and Toxiproxy join in Phase 2.
+# Dev stack (plan section 3.2). Toxiproxy is only for the chaos tests (profile "chaos").
 # The reference bot only starts with `make bot BOT_SECRET=whsec_...` (profile "bot").
 services:
   postgres:
@@ -51,6 +51,39 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+  # Celery worker: dispatches jobs, runs the virtual plugin (test keys), delivers webhooks.
+  worker:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://gateway:gateway@postgres:5432/gateway
+      REDIS_URL: redis://redis:6379/0
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "-Q", "dispatch,maintenance,webhooks", "-c", "4", "-l", "INFO"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Celery beat: the 30 second safety nets (sweepers). Run exactly ONE of these.
+  beat:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://gateway:gateway@postgres:5432/gateway
+      REDIS_URL: redis://redis:6379/0
+    command: ["celery", "-A", "app.worker.celery_app", "beat", "-l", "INFO", "-s", "/tmp/celerybeat-schedule"]
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Breaks the network between services on purpose (make chaos). Not started by default.
+  toxiproxy:
+    profiles: ["chaos"]
+    image: ghcr.io/shopify/toxiproxy:2.9.0
+    ports:
+      - "127.0.0.1:8474:8474"
 
   # A vendor-style bot that follows ai-contract.md. The api container reaches it at
   # http://reference-bot:9000 (create the vendor with --bot-url http://reference-bot:9000).
