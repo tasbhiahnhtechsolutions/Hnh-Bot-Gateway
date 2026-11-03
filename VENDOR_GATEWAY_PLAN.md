@@ -1109,7 +1109,7 @@ Page band karne ke baad ye values dobara nahi dikhengi (sirf rotate kar sakte ha
 - Test Lab: text + file upload (16 MB tak), "asli bot call karo" checkbox (warna vendor ka current mode), mock_bot scenario. Result page par request/response, headers (signature), validation errors, latency. Lab/bot-test ke run `request_logs` mein jate hain (sirf metadata). Sandbox API (`/v1/sandbox/simulate-incoming`, sirf test key) hamesha vendor ka asli bot call karta hai.
 - "Test bot connection" create form par nahi, vendor page par hai (secret create ke baad hi banta hai).
 - Admin banane ke liye: `gateway create-admin --email ... [--role support] [--generate]` (password argument kabhi nahi; prompt ya `--generate`); `make seed` dev admin `admin@example.com` bhi banata hai (random password, ek baar print).
-- Abhi nahi (Phase 2): TOTP 2FA, devices/jobs/webhook pages, daily-cap edit, admin password change/reset, admin users ka UI.
+- ~~Abhi nahi (Phase 2): TOTP 2FA, devices/jobs/webhook pages, daily-cap edit~~ -> **Phase 2 mein ban gaye** (dekho "Phase 2 outbound: asal mein kya hua", section 15 ke baad). Ab bhi nahi: admin password change/reset, admin users ka UI.
 
 ---
 
@@ -1409,7 +1409,7 @@ Tests:
 - Bana: `spike/spike.js` (DevTools console mein paste hone wali script, `window.WASpike`), `spike/README.md` (insaan ke steps A se H), `spike/SPIKE_REPORT.md` (report template), `make spike-test` (kit ke apne 10 tests, CI mein `spike` job).
 - Safety: sirf `send()` aur `tryInteractive()` asli message bhejte hain, `{confirm:'SEND'}` ke baghair nahi, ek page load mein max 5. Script mein koi network code nahi. Report mein numbers aakhri 4 digits tak masked, message text/chat naam kabhi nahi. Jo probe fail ho wo fail record hota hai, kabhi fake nahi.
 - **Ye tests sirf kit ke wade check karte hain, WhatsApp ke baare mein kuch sabit nahi karte.** Bheje gaye/na bheje, naya number, connection state, ack, `@lid`, buttons: ye sab abhi **unverified** hain jab tak insaan asli test account pe chala kar report na de.
-- **Outbound (`/v1/message-to-customer`, plugin send, Socket.IO, Celery) abhi nahi banaya.** Spike report ke baad 8.8 adjust hoga, tab Phase 2 aage chalega. Checklist ka "P2 spike" item isi liye unticked hai.
+- ~~Outbound abhi nahi banaya~~ -> **Update:** user ke kehne par poora Phase 2 Spike report ka intezar kiye baghair bana diya gaya (neeche "Phase 2 outbound: asal mein kya hua"). Jo cheezen asli WhatsApp internals par tiki hain wo `injected.js` mein alag, UNVERIFIED likhi hain. Checklist ka "P2 spike" item **ab bhi unticked** hai: jab tak insaan Spike asli test account par na chalaye, 8.8 ke wo hisse sabit nahi.
 
 ### 14.10 Hypothesis (random events) test
 
@@ -1476,13 +1476,39 @@ Computer khud hazaron random sequences banata hai: `api_post_job`, `plugin_conne
 - [x] P1: vendor kit (contract doc + FastAPI reference bot with signature verify, section 7.5)
 - [x] P1: tests (unit, API integration, sandbox modes, signature cross-language, Playwright smoke, 2-profile routing)
 - [ ] P2 spike: new chat send, connection state, ack level, LID mapping, buttons feasibility
-- [ ] P2: migrations (outbound_jobs, devices, webhooks) + one_inflight index (`admins`, `audit_log` Phase 1B mein ban chuke)
-- [ ] P2: `/v1/message-to-customer` (number, message, type, ttlSeconds, Idempotency-Key, daily cap) + status GET
-- [ ] P2: Socket.IO hub + presence (same-device takeover)
-- [ ] P2: Celery (dispatch_next, Redis pace keys, wake alarm, beat sweepers, webhook delivery, virtual plugin)
-- [ ] P2: plugin realtime (socket, alarms, outbox, dedupe, waState, send queue, popup status)
-- [ ] P2: admin full (devices live, jobs, daily cap edit, webhook logs, audit, 2FA)
-- [ ] P2: full test suite (race, pacing, Celery failure, Socket.IO, Toxiproxy chaos, Playwright offline/SW-kill/WA-state, Hypothesis, soak, manual checklist)
+- [x] P2: migrations (outbound_jobs, devices, webhooks) + one_inflight index (`admins`, `audit_log` Phase 1B mein ban chuke)
+- [x] P2: `/v1/message-to-customer` (number, message, type, ttlSeconds, Idempotency-Key, daily cap) + status GET
+- [x] P2: Socket.IO hub + presence (same-device takeover)
+- [x] P2: Celery (dispatch_next, Redis pace keys, wake alarm, beat sweepers, webhook delivery, virtual plugin)
+- [x] P2: plugin realtime (socket, alarms, outbox, dedupe, waState, send queue, popup status)
+- [x] P2: admin full (devices live, jobs, daily cap edit, webhook logs, audit, 2FA)
+- [x] P2: full test suite (race, pacing, Celery failure, Socket.IO, Toxiproxy chaos, Playwright offline/SW-kill/WA-state, Hypothesis, soak, manual checklist)
+
+### Phase 2 outbound: asal mein kya hua
+
+User ke kehne par ("phase 2 poora complete krdo") Spike report ka intezar kiye baghair poora Phase 2 bana. **Jo asli WhatsApp par nahi parkha, wo sirf nakli WhatsApp (`extension/e2e/fake-whatsapp.js`, `extension/tests/helpers.mjs`) par test hua hai.** Insaan ka manual checklist `docs/MANUAL_CHECKLIST.md` mein hai.
+
+**UNVERIFIED (asli WhatsApp par sabit nahi; sirf `injected.js` mein, nakli par test):**
+1. Unsaved number ko bhejna: pehla rasta (internal chat create) aur fallback (`web.whatsapp.com/send?phone=NUMBER`, page reload ke baad bhejna).
+2. Connection-state signal (`waState`: connected/offline/not_loaded/logged_out).
+3. Ack level (message server tak pohcha ya nahi; `sent` sirf ack ke baad).
+4. `@lid` mapping.
+5. Kya Playwright `setOffline` extension ki service worker ki connection kaat'ta hai (nakli stack par haan: test 13 pass; asli Chrome/asli WhatsApp ke baare mein kuch nahi kaha ja sakta).
+Agar inmein se koi asli WhatsApp par fail ho to wo report hona chahiye; nakli test uska badal nahi.
+
+**Plan se farq (aur wajah):**
+- `one_inflight_per_vendor` unique index `(vendor_id, is_test)` par hai, sirf `vendor_id` par nahi: test key ki jobs asli line ko nahi rokti.
+- Admin devices page htmx ke bajaye plain `<meta http-equiv="refresh" content="5">` se refresh hota hai: koi JS nahi, CSP strict rahi.
+- `ADMIN_REQUIRE_2FA` optional hai (default false); TOTP har admin apne account page se on kar sakta hai. Secret `admins.totp_secret_enc` mein Fernet se (migration `0007_admin_totp`). Ek code step sirf ek dafa chalta hai; pending login token 5 min / 5 koshish. Migration `0006` outbound tables ki hai.
+- Job status `cancelled` ka koi webhook nahi (`WEBHOOK_EVENTS`: sent/failed/expired/unknown); status GET se dikhta hai.
+- Vendor suspend aur **aakhri** live key revoke par queued jobs `cancelled` ho jati hain; in-flight job ko chhoda jata hai (usne shayad bhej diya ho). Live key rotate: plugin line kick hoti hai, queue rehti hai. Har suspend/revoke par `hub.kick_vendor`.
+- Plugin "unknown" report nahi kar sakta: server sirf `sent`/`failed`/`expired` leta hai. Result na aaye to 120 s ka lease `unknown` banata hai, aur tab tak vendor ki line band rehti hai (no-ack e2e test isi par).
+- Extension: sirf websocket transport (polling nahi), keep-alive `chrome.alarms` har 30 s; classic worker + `importScripts` (UMD modules `outbound.js`, `realtime.js`).
+- Redis ghayab ho to outbound API `503 TEMPORARILY_UNAVAILABLE` deti hai (job nahi banti).
+- Popup ke toolbar badge mein koi tabdeeli nahi; outbound section sirf live key par dikhta hai.
+- Admin audit mein message text ya keys kabhi nahi; OTP admin job list mein `OTP ****13` (aakhri 2 digits) dikhta hai, number `+9230*****567`.
+
+**Test natija (nakli WhatsApp / test keys par):** backend 676 passed (unit, integration, race, pacing, Celery, Socket.IO, Hypothesis, admin, 2FA); `make chaos` 3 passed (Toxiproxy: Redis/Postgres katna); extension Node tests 148 passed; `make spike-test` 10 passed; `make e2e` **23 passed** (real Chromium + real gateway + fake WhatsApp: existing chat, NOT_ON_WHATSAPP, unsaved number dono rastay, invalid popup, send reject, no-ack (job `unknown`, dobara nahi bheji), WA offline, ordering, tab band, doosra computer refuse, internet band/on, service worker kill, 5 browsers/5 vendors routing, aur purane smoke tests); `make soak` 10 vendors x 20 jobs = 200 sent, koi problem nahi. Soak script ko do dafa theek karna para: uske numbers virtual plugin ke magic numbers (`...0001` se `...0004`) par khatam ho rahe the, aur dobara chalane par vendor number `VENDOR_NUMBER_IN_USE` aata tha. Service worker kill test: `ServiceWorker.stopAllWorkers` ne worker ko sach mein maara (state-marker se dekha) aur wo wapas aaya, magar yeh nakli page ke saath hai.
 
 ---
 
