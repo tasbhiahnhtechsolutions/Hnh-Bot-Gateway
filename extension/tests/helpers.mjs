@@ -285,6 +285,7 @@ export function makeInjected({ ownNumber = '923001112222' } = {}) {
 
   return {
     win, clock, posted, sent, advance, deliver, requests, incoming, addChat, start, fake, chats,
+    document: context.document,
     outboundEvents, command, hooked: () => msgHandlers.length > 0,
   };
 }

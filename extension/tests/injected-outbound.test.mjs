@@ -18,6 +18,18 @@ const events = (page) => page.posted.filter((m) => m.source === 'WA_GATEWAY_OUTB
 const names = (page) => events(page).map((e) => e.event);
 const result = (page) => events(page).find((e) => e.event === 'result');
 
+test('chat list on screen while Conn.state is still connecting: treated as connected', async () => {
+  const page = makeInjected();
+  page.fake.connState = 'connecting';
+  page.document.querySelector = (sel) => (String(sel).includes('pane-side') ? {} : null);
+  await page.start();
+  page.addChat(JID);
+  page.fake.exists = async () => ({ exists: true });
+  page.command(JOB);
+  await page.advance(2000);
+  assert.equal(result(page).status, 'sent');
+});
+
 test('existing chat: sends, then reports sent with the ack level', async () => {
   const page = await ready();
   page.addChat(JID);

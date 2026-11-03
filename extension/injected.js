@@ -868,11 +868,23 @@
   function mapConnectionState(raw) {
     const value = String(raw || '').toLowerCase();
     if (!value) return '';
-    if (['connected', 'open', 'main'].includes(value)) return 'connected';
+    // Real WhatsApp has used CONNECTED, OPEN, MAIN, SMBCONNECTED, and a bare "smba".
+    if (['connected', 'open', 'main', 'smbconnected', 'smba'].includes(value)) return 'connected';
     if (['connecting', 'opening', 'pairing', 'unlaunched', 'resuming', 'syncing'].includes(value)) return 'connecting';
     if (['timeout', 'disconnected', 'offline', 'no_connection', 'proxy_blocked'].includes(value)) return 'offline';
     if (['unpaired', 'unpaired_idle', 'conflict', 'logout', 'logged_out'].includes(value)) return 'logged_out';
     return '';
+  }
+
+  function pageLooksLoggedIn() {
+    try {
+      // QR code = nobody is logged in. The chat list = WhatsApp Web is up, even if the
+      // internal Conn.state name is one we have not seen yet (UNVERIFIED on a real account).
+      if (document.querySelector('canvas[aria-label*="QR" i], div[data-ref][data-ref!=""]')) return false;
+      return Boolean(document.querySelector('#pane-side, [data-testid="chat-list"], #app [role="grid"]'));
+    } catch (_) {
+      return false;
+    }
   }
 
   // connected | connecting | offline | logged_out | not_loaded
@@ -881,12 +893,15 @@
       const mod = requireModule(['WAWebConnModel', 'WAWebConn', 'WAWebStreamModel']);
       const conn = mod?.Conn || mod?.default?.Conn || mod?.default || mod;
       const mapped = mapConnectionState(conn?.state ?? conn?.stream);
+      // If the internal name is still "connecting" but the chat list is on screen, trust the
+      // page: otherwise live outbound sits in queued forever (seen 2026-11-03).
+      if (mapped === 'connected' || (mapped && mapped !== 'connecting')) return mapped;
+      if (mapped === 'connecting' && pageLooksLoggedIn()) return 'connected';
       if (mapped) return mapped;
     } catch (_) { /* fall through to the page itself */ }
     try {
-      // The QR code screen means nobody is logged in.
       if (document.querySelector('canvas[aria-label*="QR" i], div[data-ref][data-ref!=""]')) return 'logged_out';
-      if (document.querySelector('#pane-side')) return 'connected';
+      if (pageLooksLoggedIn()) return 'connected';
     } catch (_) { /* no DOM access */ }
     return typeof window.require === 'function' ? 'connecting' : 'not_loaded';
   }
