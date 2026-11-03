@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ vendor.business_name }}{% endblock %}
+{% block content %}
+<h1>Edit vendor: {{ vendor.business_name }}</h1>
+<div class="card">
+<form method="post" action="/admin/vendors/{{ vendor.id }}/edit" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf }}">
+  <div class="row">
+    <div><label for="business_name">Business name *</label>
+      <input id="business_name" type="text" name="business_name" value="{{ v.get('business_name', '') }}" required maxlength="200"></div>
+    <div><label for="whatsapp_number">WhatsApp number *</label>
+      <input id="whatsapp_number" type="text" name="whatsapp_number" value="{{ v.get('whatsapp_number', '') }}" required placeholder="923001234567">
+      <div class="hint">Changing the number disconnects the plugin; it must run on the new number.</div></div>
+  </div>
+  <div class="row">
+    <div><label for="email">Email *</label>
+      <input id="email" type="email" name="email" value="{{ v.get('email', '') }}" required></div>
+    <div><label for="bot_base_url">Bot base URL *</label>
+      <input id="bot_base_url" type="text" name="bot_base_url" value="{{ v.get('bot_base_url', '') }}" required placeholder="https://bot.vendor.com"></div>
+  </div>
+  <div class="row">
+    <div><label for="status_webhook_url">Status webhook URL</label>
+      <input id="status_webhook_url" type="text" name="status_webhook_url" value="{{ v.get('status_webhook_url', '') }}">
+      <div class="hint">Empty = no status webhooks.</div></div>
+    <div><label for="default_country_code">Default country code</label>
+      <input id="default_country_code" type="text" name="default_country_code" value="{{ v.get('default_country_code', '92') }}"></div>
+  </div>
+  <label for="internal_note">Internal note (admins only)</label>
+  <textarea id="internal_note" name="internal_note">{{ v.get('internal_note', '') }}</textarea>
+  <p class="hint">Keys and secrets are not edited here (rotate them on the vendor page). Modes, daily cap and status have their own forms there.</p>
+  <p><button type="submit">Save</button> <a class="btn secondary" href="/admin/vendors/{{ vendor.id }}">Cancel</a></p>
+</form>
+</div>
+{% endblock %}

@@ -39,6 +39,9 @@ services:
     command: >
       sh -c "alembic upgrade head &&
              uvicorn --factory app.main:create_app --host 0.0.0.0 --port 8000"
+    # Lets the gateway reach a bot running on the host: http://host.docker.internal:3000 (dev only)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:

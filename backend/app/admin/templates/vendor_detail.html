@@ -4,6 +4,7 @@
 <div class="row">
   <div><h1>{{ vendor.business_name }} <span class="badge {{ 'ok' if vendor.status == 'active' else 'bad' }}">{{ vendor.status }}</span></h1></div>
   <div style="text-align:right">
+    {% if ctx.is_superadmin %}<a class="btn" href="/admin/vendors/{{ vendor.id }}/edit">Edit</a>{% endif %}
     <a class="btn" href="/admin/vendors/{{ vendor.id }}/lab">Test Lab</a>
     <a class="btn secondary" href="/admin/logs?vendor_id={{ vendor.id }}">All logs</a>
     <a class="btn secondary" href="/admin/vendors/{{ vendor.id }}/jobs">Messages</a>
@@ -157,4 +158,16 @@
   <h2>Recent requests</h2>
   {% include "_logs_table.html" %}
 </div>
+{% if ctx.is_superadmin %}
+<div class="card">
+  <h2>Delete vendor</h2>
+  <p class="hint">This removes the vendor for good: its keys, rules, messages, devices, webhook log and request log. It cannot be undone. To stop a vendor without losing anything, use Suspend instead.</p>
+  <form method="post" action="/admin/vendors/{{ vendor.id }}/delete" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <label for="confirm_name">Type the business name <b>{{ vendor.business_name }}</b> to confirm</label>
+    <input id="confirm_name" type="text" name="confirm_name" required>
+    <p><button class="danger" type="submit">Delete vendor</button></p>
+  </form>
+</div>
+{% endif %}
 {% endblock %}

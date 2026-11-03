@@ -63,7 +63,7 @@ from app.services.simulate import (
     report_to_dict,
     simulate_incoming,
 )
-from app.services.vendors import create_vendor
+from app.services.vendors import EDITABLE_FIELDS, create_vendor, update_vendor
 
 BASE_DIR = Path(__file__).parent
 log = get_logger(__name__)
@@ -76,6 +76,8 @@ NOTICES = {
     "rule_added": "Rule added.",
     "rule_deleted": "Rule deleted.",
     "cap_saved": "Daily cap saved.",
+    "vendor_saved": "Vendor saved.",
+    "vendor_deleted": "Vendor deleted.",
     "replayed": "The delivery will be tried again within seconds.",
     "2fa_on": "Two-factor login is on.",
     "2fa_off": "Two-factor login is off.",
@@ -539,6 +541,101 @@ async def _drop_plugin_line(request: Request, vendor_id: uuid.UUID) -> None:
 @router.get("/vendors/{vendor_id}")
 async def vendor_detail(request: Request, ctx: Viewer, db: Db, vendor_id: uuid.UUID) -> Response:
     return await _detail_page(request, ctx, db, await _vendor_or_404(db, vendor_id))
+
+
+# --- edit and delete a vendor ----------------------------------------------------------------
+
+
+def _edit_vendor_page(
+    request: Request,
+    ctx: AdminContext,
+    vendor: Vendor,
+    values: dict[str, str],
+    error: str | None,
+    status: int,
+) -> Response:
+    return render(
+        request, "vendor_edit.html", ctx, status=status, vendor=vendor, v=values, error=error
+    )
+
+
+def _vendor_values(vendor: Vendor) -> dict[str, str]:
+    return {
+        "business_name": vendor.business_name,
+        "whatsapp_number": vendor.phone_e164,
+        "email": vendor.email,
+        "bot_base_url": vendor.bot_base_url or "",
+        "status_webhook_url": vendor.status_webhook_url or "",
+        "default_country_code": vendor.default_country_code,
+        "internal_note": vendor.internal_note or "",
+    }
+
+
+@router.get("/vendors/{vendor_id}/edit")
+async def vendor_edit_page(
+    request: Request, ctx: Manager, db: Db, vendor_id: uuid.UUID
+) -> Response:
+    vendor = await _vendor_or_404(db, vendor_id)
+    return _edit_vendor_page(request, ctx, vendor, _vendor_values(vendor), None, 200)
+
+
+@router.post("/vendors/{vendor_id}/edit")
+async def vendor_edit(
+    request: Request, ctx: ManagerPost, db: Db, deps: Deps, vendor_id: uuid.UUID
+) -> Response:
+    vendor = await _vendor_or_404(db, vendor_id)
+    values = await _form(request)
+    shown = {k: values.get(k, "") for k in EDITABLE_FIELDS}
+    try:
+        data = VendorCreate(
+            **{k: values[k] for k in EDITABLE_FIELDS if values.get(k)},
+            # Not editable here: keep what the vendor has (they are not checked or stored).
+            inbound_mode=InboundMode(vendor.inbound_mode),
+            outbound_mode=OutboundMode(vendor.outbound_mode),
+            marketing_daily_cap=vendor.marketing_daily_cap,
+        )
+        changed = await update_vendor(
+            db, vendor, data, allow_private_bot_urls=deps.settings.allow_private_bot_urls
+        )
+        if changed:
+            await audit(
+                db, ctx.admin.id, "vendor.edit", f"vendor:{vendor.id} changed: {', '.join(changed)}"
+            )
+        await db.commit()
+    except ValidationError as exc:
+        await db.rollback()
+        vendor = await _vendor_or_404(db, vendor_id)  # the rollback expired the old object
+        return _edit_vendor_page(request, ctx, vendor, shown, _validation_text(exc), 400)
+    except ApiError as exc:
+        await db.rollback()
+        vendor = await _vendor_or_404(db, vendor_id)
+        return _edit_vendor_page(request, ctx, vendor, shown, exc.message, exc.status_code)
+    if "whatsapp_number" in changed:
+        await _drop_plugin_line(request, vendor.id)  # it must reconnect with the new number
+    return _detail_url(vendor.id, "vendor_saved")
+
+
+@router.post("/vendors/{vendor_id}/delete")
+async def vendor_delete(
+    request: Request, ctx: ManagerPost, db: Db, vendor_id: uuid.UUID
+) -> Response:
+    vendor = await _vendor_or_404(db, vendor_id)
+    values = await _form(request)
+    if values.get("confirm_name") != vendor.business_name:
+        return await _detail_page(
+            request,
+            ctx,
+            db,
+            vendor,
+            error="To delete, type the exact business name of this vendor.",
+            status=400,
+        )
+    name, vendor_pk = vendor.business_name, vendor.id
+    await audit(db, ctx.admin.id, "vendor.delete", f"vendor:{vendor_pk} ({name})")
+    await vendors.delete(db, vendor)
+    await db.commit()
+    await _drop_plugin_line(request, vendor_pk)
+    return RedirectResponse("/admin/vendors?notice=vendor_deleted", status_code=303)
 
 
 @router.post("/vendors/{vendor_id}/modes")

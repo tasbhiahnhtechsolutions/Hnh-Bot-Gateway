@@ -31,3 +31,9 @@ async def get_active_by_phone(db: AsyncSession, phone_e164: str) -> Vendor | Non
 
 async def get_by_business_name(db: AsyncSession, business_name: str) -> Vendor | None:
     return await db.scalar(select(Vendor).where(Vendor.business_name == business_name))
+
+
+async def delete(db: AsyncSession, vendor: Vendor) -> None:
+    """Hard delete. Keys, rules, jobs, devices, webhooks and logs go with it (ON DELETE CASCADE)."""
+    await db.delete(vendor)
+    await db.flush()
