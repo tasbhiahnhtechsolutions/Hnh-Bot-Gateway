@@ -145,7 +145,10 @@ class Hub:
             # Same device, new connection: the old socket is a ghost. Drop it.
             await self.sio.disconnect(claim.replaced_sid)
         await self.sio.save_session(sid, {"vendor_id": str(vendor_id), "device_id": device_id})
-        await self.sio.enter_room(sid, vendor_room(str(vendor_id)))
+        # Not ``sio.enter_room``: while the client is still connecting, the Redis manager would
+        # publish the request to the other hosts instead of applying it here. The room only has
+        # to exist on the host that owns the socket; emits reach it through Redis.
+        self.sio.manager.basic_enter_room(sid, "/", vendor_room(str(vendor_id)))
         log.info("socket_connected", vendor_id=str(vendor_id))
         await self._wake_dispatch(vendor_id)
 
@@ -248,7 +251,8 @@ class Hub:
         redis = self.rt.redis
         before = await presence.wa_state(redis, vendor_id)
         if not await presence.refresh(redis, vendor_id, sid, payload.waState):
-            await self.sio.disconnect(sid)  # somebody else took the line, or it expired
+            # Somebody else took the line, or it expired. Drop the socket after this reply.
+            self.sio.start_background_task(self.sio.disconnect, sid)
             return {"ok": False, "error": "SESSION_LOST"}
         async with self.app.state.session_factory() as db:
             await db.execute(
