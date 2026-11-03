@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Devices - {{ vendor.business_name }}{% endblock %}
+{% block head %}<meta http-equiv="refresh" content="5">{% endblock %}
+{% block content %}
+<h1>{{ vendor.business_name }}: plugin</h1>
+<p class="hint">This page refreshes itself every 5 seconds. <a href="/admin/vendors/{{ vendor.id }}">Back to the vendor</a></p>
+<div class="card">
+{% include "_devices_table.html" %}
+</div>
+{% endblock %}

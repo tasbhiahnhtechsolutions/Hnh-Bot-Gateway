@@ -6,6 +6,8 @@
   <div style="text-align:right">
     <a class="btn" href="/admin/vendors/{{ vendor.id }}/lab">Test Lab</a>
     <a class="btn secondary" href="/admin/logs?vendor_id={{ vendor.id }}">All logs</a>
+    <a class="btn secondary" href="/admin/vendors/{{ vendor.id }}/jobs">Messages</a>
+    <a class="btn secondary" href="/admin/vendors/{{ vendor.id }}/webhooks">Webhooks</a>
   </div>
 </div>
 
@@ -15,11 +17,24 @@
     <tr><th>Email</th><td>{{ vendor.email }}</td></tr>
     <tr><th>Bot URL</th><td class="mono">{{ vendor.bot_base_url or '-' }}</td></tr>
     <tr><th>Status webhook</th><td class="mono">{{ vendor.status_webhook_url or '-' }}</td></tr>
-    <tr><th>Country code / daily cap</th><td>{{ vendor.default_country_code }} / {{ vendor.marketing_daily_cap }}</td></tr>
+    <tr><th>Country code</th><td>{{ vendor.default_country_code }}</td></tr>
+    <tr><th>Marketing today</th><td>{{ cap_used if cap_used is not none else 0 }} of {{ vendor.marketing_daily_cap }}</td></tr>
     <tr><th>Last plugin request</th><td>{{ last_seen|dt }}</td></tr>
     <tr><th>Created</th><td>{{ vendor.created_at|dt }}</td></tr>
     <tr><th>Note</th><td>{{ vendor.internal_note or '-' }}</td></tr>
   </table>
+</div>
+
+<div class="card">
+  <h2>Plugin (devices)</h2>
+  {% include "_devices_table.html" %}
+  <p class="hint"><a href="/admin/vendors/{{ vendor.id }}/devices">Live view</a> (refreshes every 5 seconds)</p>
+</div>
+
+<div class="card">
+  <h2>Recent messages to customers</h2>
+  {% include "_jobs_table.html" %}
+  <p class="hint">Numbers and texts are masked. <a href="/admin/vendors/{{ vendor.id }}/jobs">All messages</a></p>
 </div>
 
 <div class="card">
@@ -53,6 +68,17 @@
     </div>
     <p><input id="confirm_modes" type="checkbox" name="confirm"> <label class="inline" for="confirm_modes">I understand: switching away from <b>forward</b> means real customers get canned/echo/silent answers.</label></p>
     <button type="submit">Save modes</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Marketing daily cap</h2>
+  <p class="hint">Used today: {{ cap_used if cap_used is not none else 0 }} of {{ vendor.marketing_daily_cap }} (day = Asia/Karachi). OTP and transactional messages are never capped.</p>
+  <form method="post" action="/admin/vendors/{{ vendor.id }}/cap">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <label for="marketing_daily_cap">New cap</label>
+    <input id="marketing_daily_cap" type="number" min="0" max="100000" name="marketing_daily_cap" value="{{ vendor.marketing_daily_cap }}">
+    <p><button type="submit">Save cap</button></p>
   </form>
 </div>
 

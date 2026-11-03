@@ -6,6 +6,7 @@
 <meta name="robots" content="noindex">
 <title>{% block title %}Admin{% endblock %} - Vendor Gateway</title>
 <link rel="stylesheet" href="/admin/static/admin.css">
+{% block head %}{% endblock %}
 </head>
 <body>
 {% if admin %}
@@ -16,7 +17,7 @@
   <a href="/admin/logs">Request logs</a>
   {% if ctx.is_superadmin %}<a href="/admin/audit">Audit log</a>{% endif %}
   <span class="spacer"></span>
-  <span>{{ admin.email }} <span class="badge">{{ admin.role }}</span></span>
+  <a href="/admin/account">{{ admin.email }}</a> <span class="badge">{{ admin.role }}</span>
   <form method="post" action="/admin/logout">
     <input type="hidden" name="csrf_token" value="{{ csrf }}">
     <button class="link" type="submit">Log out</button>

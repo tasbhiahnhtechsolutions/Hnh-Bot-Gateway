@@ -8,6 +8,7 @@ reaches a final state exactly once and prints how long that took.
 
 import argparse
 import asyncio
+import random
 import statistics
 import time
 import uuid
@@ -31,13 +32,15 @@ async def main(base_url: str, vendors: int, jobs_per_vendor: int, timeout_second
     factory = create_session_factory(engine)
     box = SecretBox(settings.secret_encryption_key.get_secret_value())
     keys: list[str] = []
+    # A fresh block of vendor numbers per run, so a second run on the same database works.
+    first_number = 923_100_000_000 + random.randrange(1_000_000) * 1000  # noqa: S311
     async with factory() as db:
         for index in range(vendors):
             created = await create_vendor(
                 db,
                 VendorCreate(
                     business_name=f"Soak {uuid.uuid4().hex[:6]}",
-                    whatsapp_number=str(923100000000 + index),
+                    whatsapp_number=str(first_number + index),
                     email="soak@example.com",
                     bot_base_url="https://example.invalid",
                 ),
@@ -52,7 +55,9 @@ async def main(base_url: str, vendors: int, jobs_per_vendor: int, timeout_second
     async with httpx.AsyncClient(base_url=base_url, timeout=30) as client:
 
         async def one(key: str, n: int) -> None:
-            number = f"0300{1_000_000 + n}"
+            # Never end in 0001 to 0004: those are the virtual plugin's magic numbers (failed,
+            # not ready, silent, slow). A soak run wants plain "sent after 1 to 3 seconds".
+            number = f"0300{1_000_000 + n * 10 + 5}"
             response = await client.post(
                 "/v1/message-to-customer",
                 headers={"X-API-Key": key},

@@ -1,0 +1,18 @@
+<table>
+  <tr><th>Created</th><th>Job</th><th>To</th><th>Type</th><th>Text</th><th>Status</th><th>Tries</th><th>Ack</th><th>Error</th></tr>
+  {% for j in jobs %}
+  <tr>
+    <td>{{ j.created_at|dt }}</td>
+    <td class="mono">{{ j.id }}</td>
+    <td class="mono">{{ j.to }}</td>
+    <td>{{ j.type }}{% if j.test %} <span class="badge">test</span>{% endif %}</td>
+    <td class="mono">{{ j.body }}</td>
+    <td><span class="badge {{ 'ok' if j.status == 'sent' else ('bad' if j.status in ['failed', 'expired', 'unknown', 'cancelled'] else '') }}">{{ j.status }}</span></td>
+    <td>{{ j.attempts }}</td>
+    <td>{{ j.ack if j.ack is not none else '-' }}</td>
+    <td class="mono">{{ j.error }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="9" class="hint">No messages yet.</td></tr>
+  {% endfor %}
+</table>

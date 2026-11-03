@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Webhooks - {{ vendor.business_name }}{% endblock %}
+{% block content %}
+<h1>{{ vendor.business_name }}: status webhooks</h1>
+<p class="hint">Sent to <span class="mono">{{ vendor.status_webhook_url or 'no URL set' }}</span>. <a href="/admin/vendors/{{ vendor.id }}">Back to the vendor</a></p>
+<div class="card">
+<table>
+  <tr><th>Created</th><th>Event</th><th>Job</th><th>Status</th><th>Tries</th><th>Last answer</th><th>Next try</th><th></th></tr>
+  {% for d in deliveries %}
+  <tr>
+    <td>{{ d.created_at|dt }}</td>
+    <td class="mono">{{ d.event }}</td>
+    <td class="mono">{{ d.job_id }}</td>
+    <td><span class="badge {{ 'ok' if d.status == 'delivered' else ('bad' if d.status == 'failed' else '') }}">{{ d.status }}</span></td>
+    <td>{{ d.attempts }}</td>
+    <td class="mono">{{ d.last_status_code or '' }} {{ d.last_error or '' }}</td>
+    <td>{% if d.status == 'pending' %}{{ d.next_attempt_at|dt }}{% endif %}</td>
+    <td>{% if ctx.is_superadmin and d.status != 'pending' %}
+      <form class="inline-form" method="post" action="/admin/vendors/{{ vendor.id }}/webhooks/{{ d.id }}/replay">
+        <input type="hidden" name="csrf_token" value="{{ csrf }}"><button class="secondary" type="submit">Replay</button></form>
+    {% endif %}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="8" class="hint">No webhook has been sent yet.</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}

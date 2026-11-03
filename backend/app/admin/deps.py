@@ -23,6 +23,10 @@ class AdminLoginRequired(Exception):
     """Not logged in: the exception handler redirects to the login page."""
 
 
+class AdminSetupRequired(Exception):
+    """ADMIN_REQUIRE_2FA is on and this admin has not set up two-factor login yet."""
+
+
 class AdminForbidden(Exception):
     """Logged in but the CSRF token or the role does not allow this."""
 
@@ -64,6 +68,14 @@ async def get_admin(request: Request, db: Annotated[AsyncSession, Depends(get_db
     if admin is None or not admin.is_active:
         await admin_sessions.destroy_session(request.app.state.redis, session_id)
         raise AdminLoginRequired
+    path = request.url.path
+    if (
+        request.app.state.settings.admin_require_2fa
+        and not admin.totp_secret_enc
+        and not path.startswith("/admin/account")
+        and path != "/admin/logout"
+    ):
+        raise AdminSetupRequired
     info = AdminInfo(id=admin.id, email=admin.email, role=admin.role)
     return AdminContext(admin=info, session_id=session_id, csrf_token=session.csrf_token)
 

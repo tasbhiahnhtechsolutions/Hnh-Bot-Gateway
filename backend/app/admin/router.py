@@ -25,6 +25,7 @@ from app.admin.deps import (
     AdminContext,
     AdminForbidden,
     AdminLoginRequired,
+    AdminSetupRequired,
     Manager,
     ManagerPost,
     Operator,
@@ -32,7 +33,9 @@ from app.admin.deps import (
     login_redirect,
 )
 from app.api.deps import Db, Deps
+from app.core import totp
 from app.core.errors import ApiError, api_error_handler, http_error_handler
+from app.core.logging import get_logger
 from app.core.security import KeyKind
 from app.models import (
     CannedMatchType,
@@ -44,10 +47,13 @@ from app.models import (
     VendorStatus,
 )
 from app.repositories import admins, api_keys, canned_rules, request_logs, vendors
+from app.repositories import outbound as outbound_repo
 from app.schemas.vendor import VendorCreate
-from app.services import admin_sessions
+from app.services import admin_sessions, daily_cap, webhooks
 from app.services import api_keys as key_service
 from app.services.admins import audit, check_login
+from app.services.devices import live_devices
+from app.services.job_view import mask_body, mask_number
 from app.services.mock_bot import MockScenario
 from app.services.request_log import record_request
 from app.services.simulate import (
@@ -60,6 +66,7 @@ from app.services.simulate import (
 from app.services.vendors import create_vendor
 
 BASE_DIR = Path(__file__).parent
+log = get_logger(__name__)
 LAB_FILE_LIMIT = 16 * 1024 * 1024
 MAX_PASSWORD_CHARS = 1024
 NOTICES = {
@@ -68,6 +75,11 @@ NOTICES = {
     "key_revoked": "Key revoked.",
     "rule_added": "Rule added.",
     "rule_deleted": "Rule deleted.",
+    "cap_saved": "Daily cap saved.",
+    "replayed": "The delivery will be tried again within seconds.",
+    "2fa_on": "Two-factor login is on.",
+    "2fa_off": "Two-factor login is off.",
+    "2fa_required": "Set up two-factor login to continue.",
 }
 MEDIA_TYPES = ("image", "sticker", "document", "ptt", "audio")
 
@@ -160,7 +172,6 @@ async def login_page(request: Request) -> Response:
 
 @router.post("/login")
 async def login(request: Request, db: Db) -> Response:
-    settings = request.app.state.settings
     redis = request.app.state.redis
     form = await request.form(max_files=0, max_fields=10)
     email = str(form.get("email") or "").strip()
@@ -187,14 +198,31 @@ async def login(request: Request, db: Db) -> Response:
             await db.rollback()
             await admin_sessions.record_login_failure(redis, email, ip)
             return _login_page(request, error="Wrong email or password.", status=401)
+        if admin.totp_secret_enc:
+            # Right password, but a code from the authenticator app is still needed.
+            pending = await admin_sessions.create_pending_login(redis, admin.id)
+            await db.commit()  # keeps a password re-hash; the login itself is not done yet
+            return _two_factor_page(request, pending, form_token)
         await admin_sessions.clear_login_failures(redis, email)
-        session_id, _csrf = await admin_sessions.create_session(
-            redis, admin.id, settings.admin_session_hours * 3600
-        )
+        return await _start_session(request, db, admin.id)
     except RedisError:
         return _login_page(request, error="Login is unavailable right now.", status=503)
 
-    await audit(db, admin.id, "login")
+
+def _two_factor_page(
+    request: Request, pending: str, csrf: str, *, error: str | None = None, status: int = 200
+) -> Response:
+    return render(
+        request, "login_2fa.html", None, status=status, csrf=csrf, pending=pending, error=error
+    )
+
+
+async def _start_session(request: Request, db: Db, admin_id: uuid.UUID) -> Response:
+    settings = request.app.state.settings
+    session_id, _csrf = await admin_sessions.create_session(
+        request.app.state.redis, admin_id, settings.admin_session_hours * 3600
+    )
+    await audit(db, admin_id, "login")
     await db.commit()
     response = RedirectResponse("/admin", status_code=303)
     response.set_cookie(
@@ -210,12 +238,136 @@ async def login(request: Request, db: Db) -> Response:
     return response
 
 
+@router.post("/login/2fa")
+async def login_two_factor(request: Request, db: Db) -> Response:
+    redis = request.app.state.redis
+    box = request.app.state.inbound_deps.box
+    form = await request.form(max_files=0, max_fields=10)
+    form_token = str(form.get("csrf_token") or "")
+    cookie_token = request.cookies.get(LOGIN_CSRF_COOKIE, "")
+    if not form_token or not hmac.compare_digest(form_token, cookie_token):
+        return _login_page(request, error="The form expired. Please try again.", status=403)
+    pending = str(form.get("pending") or "")
+    code = str(form.get("code") or "")[:12]
+    try:
+        admin_id = await admin_sessions.peek_pending_login(redis, pending)
+        admin = await admins.get(db, admin_id) if admin_id else None
+        if admin is None or not admin.is_active or not admin.totp_secret_enc:
+            return _login_page(request, error="That login expired. Start again.", status=401)
+        ip = _client_ip(request)
+        wait = await admin_sessions.login_blocked_for(redis, admin.email, ip)
+        if wait:
+            return _login_page(
+                request, error="Too many failed attempts. Try again later.", status=429
+            )
+        step = totp.verify(box.decrypt(admin.totp_secret_enc), code)
+        if step is None or not await admin_sessions.claim_code_step(redis, admin.id, step):
+            await admin_sessions.record_login_failure(redis, admin.email, ip)
+            if not await admin_sessions.count_code_attempt(redis, pending):
+                return _login_page(request, error="Too many wrong codes. Start again.", status=401)
+            return _two_factor_page(
+                request, pending, form_token, error="Wrong code. Try the current one.", status=401
+            )
+        await admin_sessions.finish_pending_login(redis, pending)
+        await admin_sessions.clear_login_failures(redis, admin.email)
+        return await _start_session(request, db, admin.id)
+    except RedisError:
+        return _login_page(request, error="Login is unavailable right now.", status=503)
+
+
 @router.post("/logout")
 async def logout(request: Request, ctx: Operator) -> Response:
     await admin_sessions.destroy_session(request.app.state.redis, ctx.session_id)
     response = login_redirect()
     response.delete_cookie(SESSION_COOKIE, path=COOKIE_PATH)
     return response
+
+
+# --- account: two-factor login ---------------------------------------------------------------
+
+
+async def _account_page(
+    request: Request,
+    ctx: AdminContext,
+    db: Db,
+    *,
+    error: str | None = None,
+    status: int = 200,
+) -> Response:
+    admin = await admins.get(db, ctx.admin.id)
+    enabled = bool(admin and admin.totp_secret_enc)
+    secret = None
+    if not enabled:
+        secret = await admin_sessions.load_setup_secret(request.app.state.redis, ctx.admin.id)
+    return render(
+        request,
+        "account.html",
+        ctx,
+        status=status,
+        error=error,
+        enabled=enabled,
+        secret=secret,
+        uri=totp.otpauth_uri(secret, ctx.admin.email, "Vendor Gateway") if secret else None,
+        required=request.app.state.settings.admin_require_2fa,
+    )
+
+
+@router.get("/account")
+async def account(request: Request, ctx: Viewer, db: Db) -> Response:
+    return await _account_page(request, ctx, db)
+
+
+@router.post("/account/2fa/start")
+async def two_factor_start(request: Request, ctx: Operator, db: Db) -> Response:
+    admin = await admins.get(db, ctx.admin.id)
+    if admin is not None and admin.totp_secret_enc:
+        return await _account_page(
+            request, ctx, db, error="Two-factor login is already on.", status=409
+        )
+    await admin_sessions.save_setup_secret(request.app.state.redis, ctx.admin.id, totp.new_secret())
+    return RedirectResponse("/admin/account", status_code=303)
+
+
+@router.post("/account/2fa/enable")
+async def two_factor_enable(request: Request, ctx: Operator, db: Db, deps: Deps) -> Response:
+    redis = request.app.state.redis
+    values = await _form(request)
+    secret = await admin_sessions.load_setup_secret(redis, ctx.admin.id)
+    if secret is None:
+        return await _account_page(request, ctx, db, error="Start the setup again.", status=400)
+    step = totp.verify(secret, values.get("code", ""))
+    if step is None or not await admin_sessions.claim_code_step(redis, ctx.admin.id, step):
+        return await _account_page(
+            request, ctx, db, error="Wrong code. Try the current one.", status=400
+        )
+    admin = await admins.get(db, ctx.admin.id)
+    if admin is None:
+        raise AdminLoginRequired
+    admin.totp_secret_enc = deps.box.encrypt(secret)
+    await audit(db, ctx.admin.id, "admin.2fa_enable")
+    await db.commit()
+    await admin_sessions.clear_setup_secret(redis, ctx.admin.id)
+    return RedirectResponse("/admin/account?notice=2fa_on", status_code=303)
+
+
+@router.post("/account/2fa/disable")
+async def two_factor_disable(request: Request, ctx: Operator, db: Db, deps: Deps) -> Response:
+    redis = request.app.state.redis
+    values = await _form(request)
+    admin = await admins.get(db, ctx.admin.id)
+    if admin is None or not admin.totp_secret_enc:
+        return await _account_page(
+            request, ctx, db, error="Two-factor login is not on.", status=400
+        )
+    step = totp.verify(deps.box.decrypt(admin.totp_secret_enc), values.get("code", ""))
+    if step is None or not await admin_sessions.claim_code_step(redis, ctx.admin.id, step):
+        return await _account_page(
+            request, ctx, db, error="Wrong code. Try the current one.", status=400
+        )
+    admin.totp_secret_enc = None
+    await audit(db, ctx.admin.id, "admin.2fa_disable")
+    await db.commit()
+    return RedirectResponse("/admin/account?notice=2fa_off", status_code=303)
 
 
 # --- dashboard, vendors list -----------------------------------------------------------------
@@ -330,6 +482,9 @@ async def _detail_page(
         error=error,
         vendor=vendor,
         keys=await api_keys.list_for_vendor(db, vendor.id),
+        devices=await _devices_or_empty(request, db, vendor.id),
+        cap_used=await _cap_used(request, vendor.id),
+        jobs=_job_rows(await outbound_repo.list_jobs(db, vendor.id, limit=10)),
         rules=await canned_rules.list_for_vendor(db, vendor.id),
         logs=await request_logs.list_recent(db, vendor_id=vendor.id, limit=20),
         last_seen=(await request_logs.last_seen_by_vendor(db)).get(vendor.id),
@@ -338,6 +493,47 @@ async def _detail_page(
         match_types=list(CannedMatchType),
         media_types=MEDIA_TYPES,
     )
+
+
+async def _devices_or_empty(request: Request, db: Db, vendor_id: uuid.UUID) -> list[Any]:
+    try:
+        return await live_devices(db, request.app.state.redis, vendor_id)
+    except RedisError:
+        return []
+
+
+async def _cap_used(request: Request, vendor_id: uuid.UUID) -> int | None:
+    try:
+        return await daily_cap.used_today(request.app.state.redis, vendor_id)
+    except RedisError:
+        return None
+
+
+def _job_rows(jobs: list[Any]) -> list[dict[str, Any]]:
+    """What the admin may see of a job: masked number, masked text (plan section 9.2)."""
+    return [
+        {
+            "id": j.id,
+            "created_at": j.created_at,
+            "to": mask_number(j.to_number),
+            "type": j.type,
+            "status": j.status,
+            "attempts": j.attempts,
+            "error": j.error_code or "",
+            "ack": j.wa_ack,
+            "body": mask_body(j.body, j.type),
+            "test": j.is_test,
+        }
+        for j in jobs
+    ]
+
+
+async def _drop_plugin_line(request: Request, vendor_id: uuid.UUID) -> None:
+    """Key revoked or vendor suspended: the plugin must not stay connected for a second longer."""
+    try:
+        await request.app.state.hub.kick_vendor(vendor_id)
+    except Exception as exc:  # the database change is already saved; presence expires on its own
+        log.warning("kick_failed", error_type=type(exc).__name__)
 
 
 @router.get("/vendors/{vendor_id}")
@@ -418,11 +614,20 @@ async def vendor_status(
     else:
         return await _detail_page(request, ctx, db, vendor, error="Unknown action.", status=400)
     vendor.status = new_status.value
+    cancelled = 0
+    if new_status is VendorStatus.SUSPENDED:
+        cancelled = await outbound_repo.cancel_queued(db, vendor.id)
+    detail = f" ({cancelled} queued messages cancelled)" if cancelled else ""
     await audit(
-        db, ctx.admin.id, "vendor.status_change", f"vendor:{vendor.id} -> {new_status.value}"
+        db,
+        ctx.admin.id,
+        "vendor.status_change",
+        f"vendor:{vendor.id} -> {new_status.value}{detail}",
     )
     try:
         await db.commit()
+        if new_status is VendorStatus.SUSPENDED:
+            await _drop_plugin_line(request, vendor.id)
     except IntegrityError:
         await db.rollback()
         return await _detail_page(
@@ -447,6 +652,8 @@ async def key_rotate(request: Request, ctx: ManagerPost, db: Db, vendor_id: uuid
     new_key = await key_service.rotate_key(db, vendor.id, kind)
     await audit(db, ctx.admin.id, "key.rotate", f"vendor:{vendor.id} {kind.value}")
     await db.commit()
+    if kind is KeyKind.LIVE:
+        await _drop_plugin_line(request, vendor.id)  # it holds the old key: it must sign in again
     return render(request, "key_rotated.html", ctx, vendor=vendor, kind=kind.value, new_key=new_key)
 
 
@@ -457,9 +664,24 @@ async def key_revoke(
     vendor = await _vendor_or_404(db, vendor_id)
     if key_id not in {k.id for k in await api_keys.list_for_vendor(db, vendor.id)}:
         return await _detail_page(request, ctx, db, vendor, error="Key not found.", status=404)
+    keys = await api_keys.list_for_vendor(db, vendor.id)
+    revoked_kind = next(k.kind for k in keys if k.id == key_id)
     if await api_keys.revoke(db, key_id):
-        await audit(db, ctx.admin.id, "key.revoke", f"vendor:{vendor.id} key:{key_id}")
+        cancelled = 0
+        if revoked_kind == KeyKind.LIVE.value:
+            still_active = any(
+                k.kind == KeyKind.LIVE.value and k.status == "active" and k.id != key_id
+                for k in keys
+            )
+            if (
+                not still_active
+            ):  # nobody can send for this vendor any more: do not leave jobs rotting
+                cancelled = await outbound_repo.cancel_queued(db, vendor.id)
+        detail = f" ({cancelled} queued messages cancelled)" if cancelled else ""
+        await audit(db, ctx.admin.id, "key.revoke", f"vendor:{vendor.id} key:{key_id}{detail}")
         await db.commit()
+        if revoked_kind == KeyKind.LIVE.value:
+            await _drop_plugin_line(request, vendor.id)
     return _detail_url(vendor.id, "key_revoked")
 
 
@@ -509,6 +731,109 @@ async def rule_delete(
         await audit(db, ctx.admin.id, "canned_rule.delete", f"vendor:{vendor.id}")
         await db.commit()
     return _detail_url(vendor.id, "rule_deleted")
+
+
+# --- daily cap, devices, jobs, webhook deliveries (Phase 2) -----------------------------------
+
+MAX_DAILY_CAP = 100_000
+
+
+@router.post("/vendors/{vendor_id}/cap")
+async def vendor_cap(request: Request, ctx: ManagerPost, db: Db, vendor_id: uuid.UUID) -> Response:
+    vendor = await _vendor_or_404(db, vendor_id)
+    values = await _form(request)
+    raw = values.get("marketing_daily_cap", "")
+    if not raw.isdigit() or not 0 <= int(raw) <= MAX_DAILY_CAP:
+        return await _detail_page(
+            request,
+            ctx,
+            db,
+            vendor,
+            error=f"The daily cap must be a whole number from 0 to {MAX_DAILY_CAP}.",
+            status=400,
+        )
+    new_cap = int(raw)
+    if new_cap != vendor.marketing_daily_cap:
+        await audit(
+            db,
+            ctx.admin.id,
+            "vendor.cap_change",
+            f"vendor:{vendor.id} cap {vendor.marketing_daily_cap}->{new_cap}",
+        )
+        vendor.marketing_daily_cap = new_cap
+        await db.commit()
+    return _detail_url(vendor.id, "cap_saved")
+
+
+@router.get("/vendors/{vendor_id}/devices")
+async def vendor_devices(request: Request, ctx: Viewer, db: Db, vendor_id: uuid.UUID) -> Response:
+    vendor = await _vendor_or_404(db, vendor_id)
+    return render(
+        request,
+        "devices.html",
+        ctx,
+        vendor=vendor,
+        devices=await _devices_or_empty(request, db, vendor.id),
+    )
+
+
+JOB_STATUSES = (
+    "queued",
+    "dispatched",
+    "sending",
+    "sent",
+    "failed",
+    "expired",
+    "unknown",
+    "cancelled",
+)
+
+
+@router.get("/vendors/{vendor_id}/jobs")
+async def vendor_jobs(request: Request, ctx: Viewer, db: Db, vendor_id: uuid.UUID) -> Response:
+    vendor = await _vendor_or_404(db, vendor_id)
+    status = request.query_params.get("status") or None
+    if status is not None and status not in JOB_STATUSES:
+        return render_error(request, ctx, "Unknown status.")
+    return render(
+        request,
+        "jobs.html",
+        ctx,
+        vendor=vendor,
+        jobs=_job_rows(await outbound_repo.list_jobs(db, vendor.id, status=status, limit=100)),
+        statuses=JOB_STATUSES,
+        selected=status,
+    )
+
+
+@router.get("/vendors/{vendor_id}/webhooks")
+async def vendor_webhooks(request: Request, ctx: Viewer, db: Db, vendor_id: uuid.UUID) -> Response:
+    vendor = await _vendor_or_404(db, vendor_id)
+    return render(
+        request,
+        "webhooks.html",
+        ctx,
+        vendor=vendor,
+        deliveries=await outbound_repo.list_deliveries(db, vendor.id, limit=100),
+    )
+
+
+@router.post("/vendors/{vendor_id}/webhooks/{delivery_id}/replay")
+async def webhook_replay(
+    request: Request, ctx: ManagerPost, db: Db, deps: Deps, vendor_id: uuid.UUID, delivery_id: int
+) -> Response:
+    vendor = await _vendor_or_404(db, vendor_id)
+    if not await webhooks.replay(db, delivery_id, vendor.id):
+        return render_error(
+            request, ctx, "That delivery is not there, or it is still being tried.", 409
+        )
+    await audit(db, ctx.admin.id, "webhook.replay", f"vendor:{vendor.id} delivery:{delivery_id}")
+    await db.commit()
+    try:
+        await request.app.state.runtime.scheduler.deliver_webhook(delivery_id)
+    except Exception as exc:  # the sweeper finds it within 30 seconds anyway
+        log.warning("replay_schedule_failed", error_type=type(exc).__name__)
+    return RedirectResponse(f"/admin/vendors/{vendor.id}/webhooks?notice=replayed", status_code=303)
 
 
 # --- Test Lab --------------------------------------------------------------------------------
@@ -675,5 +1000,10 @@ def register_admin(app: FastAPI) -> None:
 
     app.add_exception_handler(ApiError, _api_error)
     app.add_exception_handler(StarletteHTTPException, _http_error)
+
+    async def _setup_required(_request: Request, _exc: Exception) -> Response:
+        return RedirectResponse("/admin/account?notice=2fa_required", status_code=303)
+
     app.add_exception_handler(AdminLoginRequired, _login_required)
+    app.add_exception_handler(AdminSetupRequired, _setup_required)
     app.add_exception_handler(AdminForbidden, _forbidden)

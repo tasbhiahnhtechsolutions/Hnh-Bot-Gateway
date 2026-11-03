@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Messages - {{ vendor.business_name }}{% endblock %}
+{% block content %}
+<h1>{{ vendor.business_name }}: messages to customers</h1>
+<p class="hint">Numbers and texts are masked on purpose. The text itself is removed 24 hours after the final status. <a href="/admin/vendors/{{ vendor.id }}">Back to the vendor</a></p>
+<div class="card">
+<form method="get" action="/admin/vendors/{{ vendor.id }}/jobs">
+  <label for="status">Status</label>
+  <select id="status" name="status">
+    <option value="">All</option>
+    {% for s in statuses %}<option value="{{ s }}" {{ 'selected' if selected == s }}>{{ s }}</option>{% endfor %}
+  </select>
+  <p><button type="submit">Filter</button></p>
+</form>
+</div>
+<div class="card">
+{% include "_jobs_table.html" %}
+</div>
+{% endblock %}

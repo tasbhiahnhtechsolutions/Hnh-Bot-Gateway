@@ -1,0 +1,15 @@
+<table>
+  <tr><th>Device</th><th>State</th><th>WhatsApp</th><th>WhatsApp number</th><th>Plugin</th><th>Last heartbeat</th></tr>
+  {% for d in devices %}
+  <tr>
+    <td class="mono">{{ d.device_id[:8] }}...</td>
+    <td><span class="badge {{ 'ok' if d.online else 'bad' }}">{{ 'online' if d.online else 'offline' }}</span></td>
+    <td>{{ d.wa_state or '-' }}</td>
+    <td class="mono">{{ d.wa_number|phone or '-' }}</td>
+    <td>{{ d.plugin_version or '-' }}</td>
+    <td>{% if d.online and d.heartbeat_age_seconds is not none %}{{ d.heartbeat_age_seconds }} s ago{% else %}{{ d.last_seen_at|dt }}{% endif %}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="hint">No plugin has connected with a live key yet.</td></tr>
+  {% endfor %}
+</table>
