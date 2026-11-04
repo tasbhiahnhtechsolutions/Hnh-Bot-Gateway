@@ -44,7 +44,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "127.0.0.1:4149:8000"
+      - "4149:8000"
     networks:
       - gateway
     depends_on:
