@@ -15,8 +15,9 @@
   <div class="row">
     <div><label for="email">Email *</label>
       <input id="email" type="email" name="email" value="{{ v.get('email', '') }}" required></div>
-    <div><label for="bot_base_url">Bot base URL *</label>
-      <input id="bot_base_url" type="text" name="bot_base_url" value="{{ v.get('bot_base_url', '') }}" required placeholder="https://bot.vendor.com"></div>
+    <div><label for="bot_base_url">Bot inbound URL *</label>
+      <input id="bot_base_url" type="text" name="bot_base_url" value="{{ v.get('bot_base_url', '') }}" required placeholder="https://bot.vendor.com/ai-reply">
+      <div class="hint">Full URL we POST. We do not add /ai-reply.</div></div>
   </div>
   <div class="row">
     <div><label for="status_webhook_url">Status webhook URL</label>
@@ -25,6 +26,9 @@
     <div><label for="default_country_code">Default country code</label>
       <input id="default_country_code" type="text" name="default_country_code" value="{{ v.get('default_country_code', '92') }}"></div>
   </div>
+  <label for="vendor_context">Vendor context (JSON object, optional)</label>
+  <textarea id="vendor_context" name="vendor_context" rows="4" placeholder='{"clinicId": "gulberg"}'>{{ v.get('vendor_context', '') }}</textarea>
+  <div class="hint">Sent as <span class="mono">vendorContext</span> on every inbound bot call. Empty = {}.</div>
   <label for="internal_note">Internal note (admins only)</label>
   <textarea id="internal_note" name="internal_note">{{ v.get('internal_note', '') }}</textarea>
   <p class="hint">Keys and secrets are not edited here (rotate them on the vendor page). Modes, daily cap and status have their own forms there.</p>

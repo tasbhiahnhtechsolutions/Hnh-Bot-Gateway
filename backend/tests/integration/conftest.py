@@ -145,7 +145,7 @@ class Api:
             "business_name": f"Vendor {uuid.uuid4().hex[:6]}",
             "whatsapp_number": str(923000000000 + uuid.uuid4().int % 10**9),
             "email": "v@example.com",
-            "bot_base_url": "http://bot.test",
+            "bot_base_url": "http://bot.test/ai-reply",
         }
         values.update(fields)
         async with self.app.state.session_factory() as db:

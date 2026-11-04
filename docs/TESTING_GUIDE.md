@@ -64,7 +64,7 @@ Server band karna ho to `make down`.
 | Business name | `My Test` |
 | WhatsApp number | Wo number jis WhatsApp se Chrome mein login karoge. Country code ke saath, bina `+`, jaise `923001234567` |
 | Email | Koi bhi |
-| Bot base URL | Abhi `http://host.docker.internal:3000` (purana Turabees bot). Echo test ke liye bhi chalega, bot na chale tab bhi |
+| Bot inbound URL | Poori URL, jaise `http://host.docker.internal:3000/ai-reply` (purana Turabees bot). Path gateway khud add nahi karta. Echo test ke liye bhi chalega, bot na chale tab bhi |
 | Status webhook URL | Khali chhod do (optional, Part 6 dekho) |
 | Default country code | `92` |
 | Marketing daily cap | Khali (default 200) |
@@ -186,7 +186,7 @@ Ye cases ek ek karke karo:
    npm run start
    ```
    (port 3000)
-2. Vendor page par **Bot base URL** `http://host.docker.internal:3000` ho.
+2. Vendor page par **Bot inbound URL** `http://host.docker.internal:3000/ai-reply` ho.
    `host.docker.internal` ka rasta `docker-compose.yml` mein add ho chuka hai. `make up` dobara
    chalao agar abhi tak nahi chalaya.
 3. Vendor page, **Bot connection**, **Test bot connection**. **Dikhna chahiye:** pass.
@@ -307,6 +307,11 @@ Logs dekhna: `make worker-logs`, ya `docker compose logs -f api`.
 Koi test fail ho to ye bhejo: kaunsa Part aur step, kya dikha (screenshot ya error text),
 popup kya kehta hai, aur admin ke Request logs / Messages mein kya likha hai.
 Keys kabhi mat bhejna.
+
+---
+
+Isolation (do bots, do vendors, ek ka msg doosre ko na jaye) aur baqi edge cases:
+`docs/EDGE_CASES.md`. Bots alag folders mein hain: `test-bot-rose-atelier` (port 3001) aur `test-bot-gold-jewel` (port 3002).
 
 ---
 

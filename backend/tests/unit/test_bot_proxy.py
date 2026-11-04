@@ -53,7 +53,7 @@ async def call(
     bot: Bot,
     *,
     settings: Settings | None = None,
-    base_url: str = "http://bot.test/",
+    base_url: str = "http://bot.test/ai-reply",
     text: str = "hello",
     resolver_ips: tuple[str, ...] = (PUBLIC_IP,),
 ) -> list[str]:
@@ -61,7 +61,7 @@ async def call(
         return list(resolver_ips)
 
     result = await call_bot(
-        base_url=base_url,
+        url=base_url,
         secret=SECRET,
         vendor_id=VENDOR_ID,
         request_id="req-123",
@@ -102,7 +102,7 @@ async def test_success_sends_a_correctly_signed_contract_request() -> None:
 async def test_report_contains_headers_and_redacted_request() -> None:
     bot = Bot()
     result = await call_bot(
-        base_url="http://bot.test",
+        url="http://bot.test/ai-reply",
         secret=SECRET,
         vendor_id=VENDOR_ID,
         request_id="r",
@@ -171,7 +171,7 @@ async def test_slow_bot_times_out_with_504() -> None:
     transport = httpx.MockTransport(slow)
     with pytest.raises(BotCallError) as info:
         await call_bot(
-            base_url="http://bot.test",
+            url="http://bot.test/ai-reply",
             secret=SECRET,
             vendor_id=VENDOR_ID,
             request_id="r",
@@ -219,7 +219,7 @@ async def test_http_is_refused_when_not_allowed() -> None:
 async def test_public_https_bot_is_called_on_the_vetted_ip_with_hostname_kept() -> None:
     bot = Bot()
     settings = make_settings(allow_private_bot_urls=False)
-    await call(bot, settings=settings, base_url="https://bot.vendor.com:8443/v1")
+    await call(bot, settings=settings, base_url="https://bot.vendor.com:8443/v1/ai-reply")
 
     (request,) = bot.requests
     assert request.url.host == PUBLIC_IP  # we connect to the IP we checked
@@ -244,7 +244,7 @@ async def test_next_vetted_ip_is_tried_when_one_is_unreachable() -> None:
     replies = await call(
         bot,
         settings=settings,
-        base_url="https://bot.vendor.com",
+        base_url="https://bot.vendor.com/ai-reply",
         resolver_ips=("93.184.216.34", "93.184.216.35"),
     )
     assert replies == ["ok"]
@@ -257,7 +257,27 @@ async def test_http_error_does_not_try_other_ips() -> None:
     await error_of(
         bot,
         settings=settings,
-        base_url="https://bot.vendor.com",
+        base_url="https://bot.vendor.com/ai-reply",
         resolver_ips=("93.184.216.34", "93.184.216.35"),
     )
     assert len(bot.requests) == 1
+
+
+async def test_posts_the_saved_url_exactly_and_sends_vendor_context() -> None:
+    bot = Bot()
+    result = await call_bot(
+        url="http://bot.test/clinics/gulberg/whatsapp",
+        secret=SECRET,
+        vendor_id=VENDOR_ID,
+        request_id="req-ctx",
+        payload=payload(),
+        settings=make_settings(),
+        transport=bot.transport,
+        vendor_context={"clinicId": "gulberg", "city": "LHR"},
+    )
+    assert result.replies == ["hi"]
+    (request,) = bot.requests
+    assert str(request.url) == "http://bot.test/clinics/gulberg/whatsapp"
+    body = json.loads(request.content)
+    assert body["vendorContext"] == {"clinicId": "gulberg", "city": "LHR"}
+    assert list(body)[-1] == "vendorContext"

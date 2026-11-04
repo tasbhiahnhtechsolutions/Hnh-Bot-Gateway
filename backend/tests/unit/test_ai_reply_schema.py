@@ -41,6 +41,8 @@ def test_body_for_the_bot_starts_with_version_and_request_id_and_keeps_camel_cas
     assert body["requestId"] == "req-1"
     assert body["chatHistory"] == [{"fromMe": True, "text": "Hello", "timestamp": "19:10:20"}]
     assert body["incomingMessages"] == [{"text": "hi", "timestamp": "19:30:12", "media": None}]
+    assert body["vendorContext"] == {}
+    assert list(body)[-1] == "vendorContext"
 
 
 def test_unknown_plugin_fields_never_reach_the_bot() -> None:
@@ -53,11 +55,14 @@ def test_unknown_plugin_fields_never_reach_the_bot() -> None:
             }
         ],
         somethingElse="leak",
+        vendorContext={"clinicId": "from-plugin"},
     )
-    text = json.dumps(bot_request_body(payload, "r"))
+    body = bot_request_body(payload, "r", vendor_context={"clinicId": "gulberg"})
+    text = json.dumps(body)
     assert "previewUrl" not in text
     assert "thumbnailBase64" not in text
     assert "somethingElse" not in text
+    assert body["vendorContext"] == {"clinicId": "gulberg"}
 
 
 def test_skip_flags_only_appear_when_true() -> None:

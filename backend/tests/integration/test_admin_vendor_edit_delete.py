@@ -13,7 +13,8 @@ EDIT = {
     "business_name": "Renamed Shop",
     "whatsapp_number": "923001234567",
     "email": "new@example.com",
-    "bot_base_url": "https://bot.example.com/",
+    "bot_base_url": "https://bot.example.com/ai-reply",
+    "vendor_context": '{"clinicId": "gulberg"}',
     "status_webhook_url": "",
     "default_country_code": "92",
     "internal_note": "changed",
@@ -48,7 +49,8 @@ async def test_edit_changes_the_fields_and_audits_only_their_names(make_api: Mak
     vendor = await loaded(api, created.vendor.id)
     assert vendor.business_name == "Renamed Shop"
     assert vendor.email == "new@example.com"
-    assert vendor.bot_base_url == "https://bot.example.com"
+    assert vendor.bot_base_url == "https://bot.example.com/ai-reply"
+    assert vendor.vendor_context == {"clinicId": "gulberg"}
     assert vendor.internal_note == "changed"
     assert "vendor.edit" in await audit_actions(api)
     targets = " ".join(await audit_targets(api))

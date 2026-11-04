@@ -21,11 +21,11 @@ the environment and is never written to a file, a log or an image.
 ```bash
 # from whatsup-plugin/ (Docker, joins the compose network as http://reference-bot:9000)
 make gateway ARGS="create-vendor --name 'Ref Bot Shop' --number 923001230099 \
-  --email ref@example.com --bot-url http://reference-bot:9000"      # note the Bot secret
+  --email ref@example.com --bot-url http://reference-bot:9000/ai-reply"      # note the Bot secret
 make bot BOT_SECRET=whsec_...
 make gateway ARGS="test-bot <vendor-id>"                            # PASS = contract works
 
-# or on the host, no Docker (use --bot-url http://localhost:9000 for a vendor the api can reach)
+# or on the host, no Docker (use --bot-url http://localhost:9000/ai-reply for a vendor the api can reach)
 make bot-local BOT_SECRET=whsec_...
 ```
 

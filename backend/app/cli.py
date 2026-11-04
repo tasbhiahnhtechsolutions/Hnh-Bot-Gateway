@@ -55,7 +55,17 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--name", required=True, dest="business_name")
     create.add_argument("--number", required=True, dest="whatsapp_number")
     create.add_argument("--email", required=True)
-    create.add_argument("--bot-url", required=True, dest="bot_base_url")
+    create.add_argument(
+        "--bot-url",
+        required=True,
+        dest="bot_base_url",
+        help="full inbound URL we POST (path included; we do not append /ai-reply)",
+    )
+    create.add_argument(
+        "--vendor-context",
+        dest="vendor_context",
+        help='JSON object sent on every inbound call, e.g. \'{"clinicId":"gulberg"}\'',
+    )
     create.add_argument("--webhook-url", dest="status_webhook_url")
     create.add_argument("--country-code", default="92", dest="default_country_code")
     create.add_argument("--cap", type=int, default=200, dest="marketing_daily_cap")

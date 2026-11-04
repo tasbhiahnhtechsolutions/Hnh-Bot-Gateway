@@ -4,7 +4,7 @@ The request models are lenient on purpose: unknown fields are ignored, so a newe
 that adds a field does not break this bot.
 """
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
@@ -50,6 +50,7 @@ class BotRequest(_Camel):
     is_saved: bool = False
     incoming_messages: list[IncomingMessage] = Field(default_factory=list)
     chat_history: list[HistoryMessage] = Field(default_factory=list)
+    vendor_context: dict[str, Any] = Field(default_factory=dict)
 
 
 class BotResponse(BaseModel):

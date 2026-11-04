@@ -62,10 +62,16 @@ class AiReplyRequest(_Camel):
     chat_history: list[HistoryMessage] = Field(default_factory=list)
 
 
-def bot_request_body(payload: AiReplyRequest, request_id: str) -> dict[str, Any]:
+def bot_request_body(
+    payload: AiReplyRequest,
+    request_id: str,
+    vendor_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """The JSON object sent to the vendor bot: the contract fields in the documented order."""
     body: dict[str, Any] = {"contractVersion": CONTRACT_VERSION, "requestId": request_id}
     body.update(payload.model_dump(by_alias=True, mode="json"))
+    # Admin-saved JSON for this WhatsApp number, never taken from the plugin/customer payload.
+    body["vendorContext"] = dict(vendor_context) if vendor_context else {}
     return body
 
 

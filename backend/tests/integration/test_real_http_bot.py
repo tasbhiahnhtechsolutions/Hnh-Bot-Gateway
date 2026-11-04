@@ -70,7 +70,7 @@ async def test_real_server_accepts_our_signature_including_unicode(
     api.app.state.inbound_deps = type(api.app.state.inbound_deps)(
         settings=api.settings, box=api.box
     )
-    created = await api.vendor(bot_base_url=base)
+    created = await api.vendor(bot_base_url=base + "/ai-reply")
     secret["secret"] = created.secrets.bot_secret
 
     body = {"chatId": "1@c.us", "incomingMessages": [{"text": "سلام 👋 \n new line"}]}
@@ -89,7 +89,7 @@ async def test_real_server_with_another_secret_answers_401_which_becomes_502(
     api.app.state.inbound_deps = type(api.app.state.inbound_deps)(
         settings=api.settings, box=api.box
     )
-    created = await api.vendor(bot_base_url=base)
+    created = await api.vendor(bot_base_url=base + "/ai-reply")
     secret["secret"] = "whsec_not_the_vendors_secret"
 
     response = await api.post_reply(created.secrets.live_key)
@@ -118,7 +118,7 @@ async def test_real_server_misbehaviour(
     api.app.state.inbound_deps = type(api.app.state.inbound_deps)(
         settings=api.settings, box=api.box
     )
-    created = await api.vendor(bot_base_url=base + path)
+    created = await api.vendor(bot_base_url=base + path + "/ai-reply")
     secret["secret"] = created.secrets.bot_secret
 
     response = await api.post_reply(created.secrets.live_key)

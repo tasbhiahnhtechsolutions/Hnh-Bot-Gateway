@@ -18,7 +18,7 @@ from app.services.canned import pick_canned_reply
 from app.services.echo import make_echo_replies
 from app.services.mock_bot import MockScenario, create_mock_bot_app
 
-MOCK_BOT_BASE_URL = "http://mock-bot.internal"
+MOCK_BOT_URL = "http://mock-bot.internal/ai-reply"
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,7 +65,7 @@ async def process_inbound(
             secret, scenario, slow_seconds=deps.settings.mock_bot_slow_seconds
         )
         result = await call_bot(
-            base_url=MOCK_BOT_BASE_URL,
+            url=MOCK_BOT_URL,
             secret=secret,
             vendor_id=vendor.id,
             request_id=request_id,
@@ -73,6 +73,7 @@ async def process_inbound(
             settings=deps.settings,
             transport=httpx.ASGITransport(app=mock),
             trusted=True,
+            vendor_context=vendor.vendor_context or {},
         )
         return InboundResult(result.replies, mode, result.report)
 
@@ -81,7 +82,7 @@ async def process_inbound(
     if not vendor.bot_base_url:
         raise ApiError(503, "BOT_NOT_CONFIGURED", "this vendor has no bot URL")
     result = await call_bot(
-        base_url=vendor.bot_base_url,
+        url=vendor.bot_base_url,
         secret=secret,
         vendor_id=vendor.id,
         request_id=request_id,
@@ -89,6 +90,7 @@ async def process_inbound(
         settings=deps.settings,
         transport=deps.bot_transport,
         resolver=deps.resolver,
+        vendor_context=vendor.vendor_context or {},
     )
     return InboundResult(result.replies, mode, result.report)
 

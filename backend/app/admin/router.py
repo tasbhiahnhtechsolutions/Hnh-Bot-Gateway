@@ -428,6 +428,7 @@ _CREATE_FIELDS = (
     "whatsapp_number",
     "email",
     "bot_base_url",
+    "vendor_context",
     "status_webhook_url",
     "default_country_code",
     "marketing_daily_cap",
@@ -559,12 +560,20 @@ def _edit_vendor_page(
     )
 
 
+def _vendor_context_text(value: object) -> str:
+    data = value if isinstance(value, dict) and value else {}
+    if not data:
+        return ""
+    return json.dumps(data, ensure_ascii=False, indent=2)
+
+
 def _vendor_values(vendor: Vendor) -> dict[str, str]:
     return {
         "business_name": vendor.business_name,
         "whatsapp_number": vendor.phone_e164,
         "email": vendor.email,
         "bot_base_url": vendor.bot_base_url or "",
+        "vendor_context": _vendor_context_text(vendor.vendor_context),
         "status_webhook_url": vendor.status_webhook_url or "",
         "default_country_code": vendor.default_country_code,
         "internal_note": vendor.internal_note or "",

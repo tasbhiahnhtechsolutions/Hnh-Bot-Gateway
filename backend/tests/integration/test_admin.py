@@ -192,7 +192,7 @@ NEW_VENDOR = {
     "business_name": "Bridal House",
     "whatsapp_number": "923001230001",
     "email": "owner@bridal.example",
-    "bot_base_url": "http://bot.test",
+    "bot_base_url": "http://bot.test/ai-reply",
     "default_country_code": "92",
     "marketing_daily_cap": "200",
     "inbound_mode": "forward",

@@ -29,7 +29,7 @@ async def test_forward_sends_a_signed_contract_request_and_returns_the_replies(
     make_api: MakeApi,
 ) -> None:
     api = await make_api()
-    created = await api.vendor(bot_base_url="http://bot.test")
+    created = await api.vendor(bot_base_url="http://bot.test/ai-reply")
     api.bot.handler = lambda _r: httpx.Response(
         200, json={"replies": ["Ji, available hai.", "Price 85,000"]}
     )
@@ -53,6 +53,7 @@ async def test_forward_sends_a_signed_contract_request_and_returns_the_replies(
     assert body["requestId"] == "req-abc"
     assert body["incomingMessages"][0]["text"] == "Red lehenga available hai? سلام 👋"
     assert body["senderNumber"] == "+923001112222"
+    assert body["vendorContext"] == {}
 
 
 async def test_plugin_only_fields_are_stripped_and_media_is_forwarded(make_api: MakeApi) -> None:
@@ -359,10 +360,19 @@ async def test_wa_number_policy_warn_still_works_when_chosen(make_api: MakeApi) 
     assert mismatch.status_code == 200  # only a warning is logged
 
 
+async def test_vendor_context_is_sent_and_plugin_cannot_override_it(make_api: MakeApi) -> None:
+    api = await make_api()
+    created = await api.vendor(vendor_context={"clinicId": "gulberg"})
+    body = {**REQUEST_BODY, "vendorContext": {"clinicId": "hacked"}}
+    assert (await api.post_reply(created.secrets.live_key, body)).status_code == 200
+    sent = json.loads(api.bot.requests[0].content)
+    assert sent["vendorContext"] == {"clinicId": "gulberg"}
+
+
 async def test_each_vendor_is_called_with_its_own_secret_and_url(make_api: MakeApi) -> None:
     api = await make_api()
-    one = await api.vendor(bot_base_url="http://one.test")
-    two = await api.vendor(bot_base_url="http://two.test")
+    one = await api.vendor(bot_base_url="http://one.test/ai-reply")
+    two = await api.vendor(bot_base_url="http://two.test/ai-reply")
     await api.post_reply(one.secrets.live_key)
     await api.post_reply(two.secrets.live_key)
 

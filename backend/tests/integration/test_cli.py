@@ -60,7 +60,29 @@ async def test_create_vendor_prints_secrets_once_and_persists(
     async with await one_session(engine) as db:
         vendor = await vendors.get_active_by_phone(db, "923001234567")
         assert vendor is not None
+        assert vendor.bot_base_url == "http://localhost:9000"
+        assert vendor.vendor_context == {}
         assert {k.kind for k in await api_keys.list_for_vendor(db, vendor.id)} == {"live", "test"}
+
+
+async def test_create_vendor_stores_full_bot_url_and_vendor_context(
+    settings: Settings, engine: AsyncEngine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = create_args(
+        **{
+            "--name": "Gulberg Clinic",
+            "--number": "923001119999",
+            "--bot-url": "http://localhost:9000/clinics/gulberg/whatsapp",
+            "--vendor-context": '{"clinicId": "gulberg"}',
+        }
+    )
+    assert await run(["create-vendor", *args], settings) == 0
+    capsys.readouterr()
+    async with await one_session(engine) as db:
+        vendor = await vendors.get_active_by_phone(db, "923001119999")
+        assert vendor is not None
+        assert vendor.bot_base_url == "http://localhost:9000/clinics/gulberg/whatsapp"
+        assert vendor.vendor_context == {"clinicId": "gulberg"}
 
 
 async def test_create_vendor_errors_exit_nonzero_and_store_nothing(

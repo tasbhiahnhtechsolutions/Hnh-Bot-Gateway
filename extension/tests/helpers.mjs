@@ -185,6 +185,12 @@ export function makeInjected({ ownNumber = '923001112222' } = {}) {
     },
   };
 
+  const pageDocument = {
+    readyState: 'complete',
+    querySelector: () => null,
+    querySelectorAll: () => (fake.popup ? [{ textContent: fake.popup }] : []),
+  };
+
   const win = {
     require: (name) => {
       if (name === 'WAWebQueryExistsJob') return fake.exists ? { queryExists: fake.exists } : undefined;
@@ -193,17 +199,14 @@ export function makeInjected({ ownNumber = '923001112222' } = {}) {
       }
       return modules[name];
     },
+    document: pageDocument,
     postMessage: (data) => posted.push(plain(data)),
     addEventListener: (type, fn) => type === 'message' && listeners.push(fn),
   };
 
   const context = vm.createContext({
     window: win,
-    document: {
-      readyState: 'complete',
-      querySelector: () => null,
-      querySelectorAll: () => (fake.popup ? [{ textContent: fake.popup }] : []),
-    },
+    document: pageDocument,
     console: { log() {}, warn() {}, error() {} },
     crypto: globalThis.crypto,
     Blob,

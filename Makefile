@@ -31,7 +31,7 @@ migrate:
 seed:
 	$(COMPOSE) exec api gateway seed
 
-# Example: make gateway ARGS="create-vendor --name Ali --number 923001234567 --email a@b.com --bot-url http://localhost:9000"
+# Example: make gateway ARGS="create-vendor --name Ali --number 923001234567 --email a@b.com --bot-url http://localhost:9000/ai-reply"
 gateway:
 	$(COMPOSE) exec api gateway $(ARGS)
 

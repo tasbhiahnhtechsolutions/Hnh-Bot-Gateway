@@ -62,6 +62,7 @@ async def test_create_vendor_issues_working_keys_and_encrypted_secrets(db: Async
     assert BOX.decrypt(vendor.webhook_secret_enc) == secrets.webhook_secret
     assert secrets.bot_secret != secrets.webhook_secret
     assert vendor.bot_base_url == "http://localhost:9000"  # trailing slash trimmed
+    assert vendor.vendor_context == {}
 
 
 async def test_no_plain_secret_is_stored_anywhere(db: AsyncSession) -> None:
@@ -108,6 +109,11 @@ async def test_prod_style_rules_apply_to_bot_url(db: AsyncSession) -> None:
         db, data(bot_base_url="https://bot.example.com"), allow=False, resolver=public
     )
     assert ok.vendor.bot_base_url == "https://bot.example.com"
+
+
+async def test_vendor_context_is_stored(db: AsyncSession) -> None:
+    created = await create(db, data(vendor_context={"clinicId": "gulberg"}))
+    assert created.vendor.vendor_context == {"clinicId": "gulberg"}
 
 
 async def test_webhook_url_is_validated_too(db: AsyncSession) -> None:

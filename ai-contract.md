@@ -23,11 +23,17 @@ Customer (WhatsApp)  <--  Our Gateway  <------+   { "replies": ["Hello!"] }
 
 **Your job:** receive JSON, return JSON. That is all.
 
-You give us **one base URL** (example: `https://bot.yourcompany.com`). We call:
+You give us the **full inbound URL** in the admin panel (not only a host). We `POST` to **exactly that URL**. We do not add `/ai-reply` ourselves.
+
+Examples:
 
 ```text
 POST https://bot.yourcompany.com/ai-reply
+POST https://api.yourcompany.com/clinics/gulberg/whatsapp
+POST https://clinic-dha.yourcompany.com/v2/bot
 ```
+
+A path like `/ai-reply` is fine. It is not required. Each WhatsApp number (each clinic) can have a different URL.
 
 ---
 
@@ -35,7 +41,7 @@ POST https://bot.yourcompany.com/ai-reply
 
 | We give you | You give us |
 |---|---|
-| Test key (`wab_test_...`) | Your bot base URL (HTTPS in production) |
+| Test key (`wab_test_...`) | Your full inbound bot URL (HTTPS in production), set in the admin panel |
 | Live key (`wab_live_...`) | Your WhatsApp business number |
 | **Bot secret** (`whsec_...`): used to check that a request really came from us | (Optional) status webhook URL |
 
@@ -73,7 +79,11 @@ X-Contract-Version:    1
   "chatHistory": [
     { "fromMe": false, "text": "Hi", "timestamp": "19:10:05" },
     { "fromMe": true,  "text": "Hello, how can I help?", "timestamp": "19:10:20" }
-  ]
+  ],
+  "vendorContext": {
+    "clinicId": "gulberg",
+    "city": "LHR"
+  }
 }
 ```
 
@@ -90,6 +100,7 @@ X-Contract-Version:    1
 | `isSaved` | boolean | `true` if the customer is saved in the WhatsApp contacts of this number. |
 | `incomingMessages` | array | **One or more** new messages from the customer (see 3.4). |
 | `chatHistory` | array | Previous messages (about the last 60) for context. Text only. Media is replaced by a label such as `[Image]`. `fromMe: true` means your number sent it. |
+| `vendorContext` | object | Extra JSON that **your admin saved for this WhatsApp number**. The same object is sent on every inbound call for that number. It is not taken from the customer message. Example: `{ "clinicId": "gulberg" }`. If nothing was saved, this is `{}`. You may ignore keys you do not use. |
 
 ### 3.4 Important: `incomingMessages` is a LIST
 
@@ -546,7 +557,7 @@ No real WhatsApp message is needed for this step.
 
 | Item | Value |
 |---|---|
-| Endpoint | `POST {baseUrl}/ai-reply` |
+| Endpoint | `POST` to the **full URL** saved in the admin panel (we do not append a path) |
 | Request grouping window | 7 seconds (messages in this window arrive together) |
 | `chatHistory` size | About 60 messages, text only |
 | One file | up to 15 MB, else `base64Data: null` + `skippedLargeFile: true` |
@@ -608,4 +619,371 @@ If it ever changes, `contractVersion` / `X-Contract-Version` will go up. This do
 
 ---
 
-*This document covers the customer-message flow (`/ai-reply`). Sending messages to customers yourself (OTP, order updates, marketing) is a separate API and is described in a separate document.*
+# Outbound: send a message to a customer yourself
+
+This second part of the document is independent of `/ai-reply`. You use it when **you** want to send a message to a customer (OTP, order update, offer). The customer does not have to write to you first.
+
+You do not need to know anything about WhatsApp internals. You only call **one HTTP endpoint**. Status can be read with a GET, or pushed to your webhook (optional).
+
+---
+
+## 12. The big picture (30 seconds)
+
+```text
+YOUR APP  -->  POST /v1/message-to-customer  -->  Our Gateway  -->  Customer (WhatsApp)
+
+YOUR APP  <--  GET  /v1/message-to-customer/{jobId}     (you poll the status)
+YOUR APP  <--  POST your webhook                        (optional: we push the status)
+```
+
+1. Your app calls our API with the customer's number and the text.
+2. We put the message in a queue and return a `jobId` immediately (HTTP `202`).
+3. Our Chrome plugin, connected to your WhatsApp number, sends the text on WhatsApp.
+4. You can poll the status, or we can POST the final status to your webhook.
+
+**Your job:** send a small JSON body, then handle the status (`sent`, `failed`, `expired`, `unknown`). That is all.
+
+---
+
+## 13. What we give you, what you give us
+
+| We give you | You give us |
+|---|---|
+| Live key (`wab_live_...`) | The customer's number and the message text |
+| Test key (`wab_test_...`) | `Idempotency-Key` on every OTP (and recommended on every call) |
+| **Webhook secret** (`whsec_...`), if you use a webhook | (Optional) a status webhook URL |
+
+Keep the **API key** and **webhook secret** private. Put them in environment variables. Never commit them to git.
+
+The live key and the test key are different. With the **test key**, no real WhatsApp message is sent (see section 21).
+
+---
+
+## 14. The request you send
+
+### 14.1 Endpoint and headers
+
+```text
+POST https://api.ourcompany.com/v1/message-to-customer
+X-API-Key: wab_live_...                (use wab_test_... while testing)
+Idempotency-Key: otp-order-9981        (required for OTP, recommended for every call)
+Content-Type: application/json
+```
+
+The exact host is given to you at onboarding. Do not hard-code a host from this document.
+
+### 14.2 Body (only 4 fields)
+
+```json
+{
+  "number": "03486102017",
+  "message": "Aap ka OTP 482913 hai.",
+  "type": "otp",
+  "ttlSeconds": 300
+}
+```
+
+| Field | Required | Meaning |
+|---|---|---|
+| `number` | yes | Customer's phone number, in any common format (`0348...`, `+92348...`, `92348...`). We normalise it. |
+| `message` | yes | The full text the customer will see. Plain text. Max **4000** characters. WhatsApp formatting works (`*bold*`, `_italic_`). No HTML. No images. |
+| `type` | no | `otp`, `transactional`, or `marketing`. Default: `transactional`. |
+| `ttlSeconds` | no | How long this message may wait in the queue. Min **30**, max **86400**. If you omit it, we use the default for that `type` (see the table below). |
+
+We do **not** accept templates, buttons, or "Yes/No" options. You send the finished text. We forward that text.
+
+---
+
+## 15. `type`: which one to use
+
+| `type` | When to use | Priority | Gap before the next message | Default TTL | Daily cap | Auto-retry if send fails |
+|---|---|---|---|---|---|---|
+| `otp` | Login / verification code | Highest (sent first) | 1–2 seconds | 300 (5 min) | none | **No** (so the customer never gets two OTPs) |
+| `transactional` | Order confirm, delivery update, bill. **Default.** | Medium | 1–2 seconds | 3600 (1 hour) | none | No after send has started |
+| `marketing` | Offer, sale, promotion | Lowest (sent last) | 8–20 seconds, random | 86400 (1 day) | yes (admin sets it per vendor, default **200** / day) | No after send has started |
+
+**In plain words:** if you send 100 marketing messages at once, we **accept all of them** (HTTP `202`), but they go out slowly on WhatsApp (about one every 10–15 seconds). If an OTP arrives while marketing is waiting, the OTP jumps the queue and is sent first.
+
+Pick `ttlSeconds` to match the real life of the message. For an OTP that expires in 5 minutes, send `ttlSeconds: 300` (or a little less). After the TTL, we never send that message.
+
+TTL example:
+
+```text
+OTP, ttlSeconds=300, sent to us at 19:00:00.
+  19:00:04  plugin is online   -> OTP is sent.
+  19:06:00  plugin still offline -> job expired. The old OTP is never sent.
+```
+
+---
+
+## 16. The response you get
+
+### 16.1 Success (HTTP `202`)
+
+```json
+{ "success": true, "jobId": "job_7f3a", "status": "queued", "channelOnline": true }
+```
+
+| Field | Meaning |
+|---|---|
+| `jobId` | Id of this message. Use it to poll the status. |
+| `status` | At this moment always `queued`. |
+| `channelOnline` | Whether our plugin is online **right now**. `false` still means the message is queued; it will go out when the plugin comes back, as long as the TTL has not passed. |
+
+### 16.2 Errors
+
+Error body:
+
+```json
+{ "error": { "code": "INVALID_NUMBER", "message": "..." } }
+```
+
+| HTTP | `error.code` | Meaning |
+|---|---|---|
+| `400` | `INVALID_NUMBER` | Number is not valid (we expect 10–15 digits after normalisation). |
+| `400` | `INVALID_REQUEST` | Empty `message`, unknown `type`, or `ttlSeconds` out of range. |
+| `401` | `INVALID_KEY` | API key is missing, wrong, or revoked. |
+| `403` | `VENDOR_SUSPENDED` | Your account is suspended. |
+| `413` | `MESSAGE_TOO_LONG` | `message` is longer than 4000 characters. |
+| `429` | `DAILY_CAP_EXCEEDED` | Marketing daily limit reached. Header `Retry-After` = seconds until tomorrow. |
+| `429` | `RATE_LIMITED` | Too many requests in a short time. |
+| `503` | `QUEUE_FULL` | Your queue is too full. Wait for older jobs to leave, then retry. |
+
+A `202` does **not** mean the customer has the message. It only means we accepted the job. Check the status (section 18 or 19).
+
+---
+
+## 17. Idempotency-Key (how you stop duplicate OTPs)
+
+**The problem:** you send an OTP, the network fails, you do not get our response, you call again. Without protection, the customer receives **two** OTPs.
+
+**The fix:** send the **same** `Idempotency-Key` on the retry.
+
+```text
+1st call:   Idempotency-Key: otp-order-9981  ->  202  jobId=job_7f3a   (new job)
+Retry:      Idempotency-Key: otp-order-9981  ->  200  jobId=job_7f3a   (same job, not a new one)
+New OTP:    Idempotency-Key: otp-order-9982  ->  202  jobId=job_7f3b   (a different message)
+```
+
+Rules:
+
+- **Required for `type: otp`.** Recommended for every call.
+- Use something unique to the action, for example your order id or login-attempt id: `otp-order-9981`.
+- A new real OTP (a new code) **must** use a new key.
+- Keep the key at most 256 characters.
+
+If you omit the key on an OTP, we reject the request (`400 INVALID_REQUEST`).
+
+---
+
+## 18. Poll the status of a message
+
+```text
+GET /v1/message-to-customer/job_7f3a
+X-API-Key: wab_live_...
+```
+
+```json
+{
+  "jobId": "job_7f3a",
+  "status": "sent",
+  "sentAt": "2026-10-30T19:00:03Z",
+  "errorCode": null
+}
+```
+
+You can only read **your** jobs. Another vendor's `jobId` returns `404`.
+
+### 18.1 Status values
+
+| Status | Meaning | What you should do |
+|---|---|---|
+| `queued` | Waiting in the queue. | Wait, or poll again. |
+| `sending` | The plugin is sending it now. | Wait. |
+| `sent` | WhatsApp's **server** accepted the message. This is **not** "the customer has read it". | Done. |
+| `failed` | Could not send. See `errorCode`. | Do **not** retry the same OTP. Use SMS or another channel if you must. |
+| `expired` | TTL passed before we could send it. | Generate a **new** OTP (new `Idempotency-Key`) if the user still needs one. |
+| `unknown` | We do not know if it was sent (network problem after send started). | **Do not send again.** Ask the customer, or think carefully before using a **new** `Idempotency-Key`. |
+| `cancelled` | Stopped (for example the API key was revoked). | Do not retry this job. |
+
+`errorCode` when `failed`:
+
+| `errorCode` | Meaning |
+|---|---|
+| `NOT_ON_WHATSAPP` | This number is not on WhatsApp. Do not send again. |
+| `SEND_FAILED` | Send failed for another reason. |
+
+---
+
+## 19. Webhook (optional): we push the status to you
+
+If you give us a `status_webhook_url` at onboarding, we POST the **final** status to that URL. You do not have to poll.
+
+The signature is the **same method** as section 5 of this document (HMAC of `timestamp + "." + raw_body`), but it is signed with your **webhook secret**, not the bot secret.
+
+```text
+POST https://yourapp.com/whatsapp/status
+Content-Type: application/json
+X-Gateway-Timestamp: 1730300000
+X-Gateway-Signature: v1=9c1d...
+X-Event-Id: evt_91ab...
+```
+
+```json
+{
+  "eventId": "evt_91ab",
+  "event": "message.sent",
+  "jobId": "job_7f3a",
+  "number": "923486102017",
+  "status": "sent",
+  "at": "2026-10-30T19:00:03Z",
+  "errorCode": null
+}
+```
+
+| `event` | When |
+|---|---|
+| `message.sent` | WhatsApp's server accepted the message. |
+| `message.failed` | Could not send (`errorCode` is set). |
+| `message.expired` | TTL passed, never sent. |
+| `message.unknown` | We do not know if it was sent. |
+
+What you must do:
+
+1. Verify the signature with the **webhook secret** (same 4 checks as section 5). Bad signature → `401`.
+2. Return **HTTP 2xx within 10 seconds**. Do the rest of your work after you answer.
+3. The same `eventId` can arrive again (our retry). Process it only once.
+4. We retry on failure: 1 min, 5 min, 30 min, 2 hours, 6 hours (max 6 tries), then we stop. You can always poll `GET` status instead.
+
+---
+
+## 20. What you should **not** do
+
+- Do **not** retry an OTP after status `sent`, `failed`, or `unknown`. That is how customers get two codes.
+- Do **not** send the same marketing blast many times a day. There is a daily cap, and there is a ban risk (section 23).
+- Do **not** send HTML, images, buttons, or template placeholders. Only the finished text.
+- Do **not** put the API key in the URL or in logs.
+
+When a customer **replies** to an OTP or an order message, that reply is a normal inbound message. It goes to your bot at `/ai-reply` (the first part of this document).
+
+---
+
+## 21. How to test outbound (no real WhatsApp needed)
+
+When our system is ready we give you a **test key** (`wab_test_...`). Calls with the test key **never** send a real WhatsApp message. A virtual plugin answers, and the last 4 digits of the number decide the result:
+
+```text
+...0001    failed,  NOT_ON_WHATSAPP
+...0002    first try WA_NOT_READY, second try sent
+...0003    no result ever arrives (status stays, then unknown)
+...0004    waits 30 seconds, then sent
+any other  sent in 1–3 seconds
+```
+
+Example:
+
+```text
+POST /v1/message-to-customer
+X-API-Key: wab_test_...
+Idempotency-Key: otp-test-1
+Content-Type: application/json
+
+{ "number": "923000000001", "message": "Aap ka OTP 482913 hai.", "type": "otp", "ttlSeconds": 300 }
+```
+
+You should receive `failed` / `NOT_ON_WHATSAPP`. Use this to test your fallback (for example "send the OTP by SMS").
+
+| # | Test | Expected |
+|---|---|---|
+| 1 | OTP with `Idempotency-Key` | `202` and a `jobId` |
+| 2 | Same `Idempotency-Key` again | `200` and the **same** `jobId` |
+| 3 | Number ending `0001` | `failed` / `NOT_ON_WHATSAPP` |
+| 4 | Number ending `0003` | `unknown` — your code must **not** send a second OTP |
+| 5 | Number ending `0004` | `sent` after about 30 seconds |
+| 6 | Empty message / bad number | `400` |
+| 7 | Marketing over the daily cap | `429 DAILY_CAP_EXCEEDED` |
+| 8 | OTP without `Idempotency-Key` | `400 INVALID_REQUEST` |
+
+The live key (`wab_live_...`) does **not** use these magic numbers. With the live key, `...0001` is treated as a real number.
+
+---
+
+## 22. Outbound rules and limits (quick table)
+
+| Item | Value |
+|---|---|
+| Endpoint | `POST /v1/message-to-customer` |
+| Status | `GET /v1/message-to-customer/{jobId}` |
+| Body fields | `number`, `message`, `type`, `ttlSeconds` |
+| `message` max length | 4000 characters, text only |
+| `type` | `otp` / `transactional` (default) / `marketing` |
+| Default TTL | otp 300, transactional 3600, marketing 86400 |
+| TTL clamp | 30–86400 seconds |
+| OTP auto-retry | never, once sending has started |
+| Marketing daily cap | per vendor, default 200 (admin can change it) |
+| Marketing gap | 8–20 seconds, random |
+| OTP / transactional gap | 1–2 seconds |
+| Webhook retries | 6 (1m, 5m, 30m, 2h, 6h) |
+| Signature on webhook | same as section 5, with the **webhook secret** |
+| Contract version | `1` |
+
+---
+
+## 23. Ban risk (please read)
+
+This product sends messages through **WhatsApp Web**, not through the official WhatsApp Cloud API. WhatsApp can restrict or ban the number, especially if you send a lot of marketing, or send to people who did not opt in.
+
+- Use `type: marketing` only for people who asked for it.
+- Stay under the daily cap. The cap is there to protect the number.
+- For large OTP or marketing volume, the official WhatsApp Cloud API is the safer long-term path.
+- Real tappable buttons and the official OTP "Copy code" button exist only on the official Cloud API. This API sends **plain text**.
+
+---
+
+## 24. Outbound go-live checklist
+
+- [ ] You send `Idempotency-Key` on every OTP (and keep the same key on retries).
+- [ ] You handle `sent`, `failed`, `expired`, and `unknown`. You **never** auto-retry after `unknown` or `failed`.
+- [ ] `NOT_ON_WHATSAPP` falls back to SMS (or you tell the user).
+- [ ] `ttlSeconds` matches the real life of the message (especially OTP).
+- [ ] Marketing stays under the daily cap. You handle `429 DAILY_CAP_EXCEEDED`.
+- [ ] (If you use a webhook) signature is verified with the webhook secret, you return 2xx quickly, and you ignore a duplicate `eventId`.
+- [ ] You tested with the **test key** and the magic numbers (section 21).
+- [ ] One end-to-end test with a real number using the **live key**.
+
+---
+
+## 25. Outbound FAQ
+
+**Do I need the customer to message me first?**
+No. That is the point of this API. You can send first (OTP, order update, offer).
+
+**Does `202` mean the customer has the message?**
+No. It only means we accepted the job. Wait for `sent` (poll or webhook).
+
+**The plugin was offline. Is my OTP lost?**
+Not immediately. It waits in the queue until `ttlSeconds`. After that it becomes `expired` and is never sent.
+
+**OTP went out twice. Why?**
+Almost always because a retry used a **new** `Idempotency-Key`, or because you sent again after `unknown`. Use the same key on retries, and never auto-retry after `unknown` / `failed` / `sent`.
+
+**I sent 100 marketing messages. When do they arrive?**
+Slowly, about one every 10–15 seconds. 100 messages take about 20–25 minutes. An OTP that arrives in between is sent first.
+
+**How many can I send from one number?**
+Marketing: up to the daily cap (default 200). OTP and transactional: no daily cap, but very high volume increases the ban risk.
+
+**The customer replied to the OTP. Where does that go?**
+To your bot, `POST /ai-reply` (the inbound part of this document).
+
+**The number is not on WhatsApp?**
+Status `failed` with `errorCode: NOT_ON_WHATSAPP`. Do not send again on WhatsApp.
+
+**Can I send buttons or an OTP "Copy code" button?**
+Not on this API. Text only. Official buttons are a WhatsApp Cloud API feature.
+
+**Can I send an image with the outbound API?**
+No. Text only.
+
+**Will this contract change?**
+If it ever changes, `contractVersion` / `X-Contract-Version` will go up. This document describes version `1`.

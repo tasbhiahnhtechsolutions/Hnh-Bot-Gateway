@@ -1,11 +1,14 @@
 """Input for creating a vendor (plan section 9.1 onboarding fields and their rules)."""
 
+import json
 import re
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints, field_validator
 
 from app.models.vendor import InboundMode, OutboundMode
+
+VENDOR_CONTEXT_MAX_BYTES = 8192
 
 _NUMBER_NOISE = re.compile(r"[\s\-()]")
 
@@ -18,7 +21,8 @@ class VendorCreate(BaseModel):
     business_name: NonEmptyStr = Field(max_length=200)
     whatsapp_number: str
     email: EmailStr
-    bot_base_url: NonEmptyStr
+    bot_base_url: NonEmptyStr  # full inbound URL; the gateway POSTs exactly this
+    vendor_context: dict[str, Any] = Field(default_factory=dict)
     status_webhook_url: str | None = None
     default_country_code: str = "92"
     marketing_daily_cap: int = Field(default=200, ge=0)
@@ -46,3 +50,22 @@ class VendorCreate(BaseModel):
     @classmethod
     def _empty_to_none(cls, value: str | None) -> str | None:
         return value or None
+
+    @field_validator("vendor_context", mode="before")
+    @classmethod
+    def _parse_vendor_context(cls, value: object) -> dict[str, Any]:
+        if value is None or value == "":
+            return {}
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError as exc:
+                raise ValueError("must be a JSON object") from exc
+        if not isinstance(value, dict):
+            raise ValueError("must be a JSON object")
+        if any(not isinstance(key, str) for key in value):
+            raise ValueError("must be a JSON object")
+        packed = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode()
+        if len(packed) > VENDOR_CONTEXT_MAX_BYTES:
+            raise ValueError(f"must be at most {VENDOR_CONTEXT_MAX_BYTES} bytes")
+        return value

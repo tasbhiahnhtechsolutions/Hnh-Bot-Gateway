@@ -26,7 +26,19 @@ test('chat list on screen while Conn.state is still connecting: treated as conne
   page.addChat(JID);
   page.fake.exists = async () => ({ exists: true });
   page.command(JOB);
-  await page.advance(2000);
+  await page.advance(22_000);
+  assert.equal(result(page).status, 'sent');
+});
+
+test('unknown Conn.state with the chat list on screen is still connected', async () => {
+  const page = makeInjected();
+  page.fake.connState = 'SMBA';
+  page.document.querySelector = (sel) => (String(sel).includes('pane-side') ? {} : null);
+  await page.start();
+  page.addChat(JID);
+  page.fake.exists = async () => ({ exists: true });
+  page.command(JOB);
+  await page.advance(22_000);
   assert.equal(result(page).status, 'sent');
 });
 

@@ -31,7 +31,7 @@ async def logs(api: Api) -> list[RequestLog]:
 
 async def test_test_key_runs_the_vendors_real_bot_and_returns_a_report(make_api: MakeApi) -> None:
     api = await make_api()
-    created = await api.vendor(bot_base_url="http://bot.test")
+    created = await api.vendor(bot_base_url="http://bot.test/ai-reply")
     api.bot.handler = lambda _r: httpx.Response(200, json={"replies": ["Ji hai!"]})
 
     response = await simulate(api, created.secrets.test_key, {"text": "Red lehenga available?"})

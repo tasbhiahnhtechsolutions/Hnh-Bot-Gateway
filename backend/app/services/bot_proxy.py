@@ -56,7 +56,7 @@ class BotCallError(ApiError):
 
 async def call_bot(
     *,
-    base_url: str,
+    url: str,
     secret: str,
     vendor_id: uuid.UUID,
     request_id: str,
@@ -65,14 +65,16 @@ async def call_bot(
     transport: httpx.AsyncBaseTransport | None = None,
     trusted: bool = False,
     resolver: Resolver = resolve_host,
+    vendor_context: dict[str, Any] | None = None,
 ) -> BotCallResult:
-    """POST the signed request to ``{base_url}/ai-reply`` and return the validated replies.
+    """POST the signed request to the vendor's full inbound URL and return the validated replies.
 
-    ``trusted`` is only for our own in-process mock bot: it skips the SSRF check. We never
-    retry (a retry could make the customer get two answers) and never follow redirects.
+    We call ``url`` exactly (no path is appended). ``trusted`` is only for our own in-process
+    mock bot: it skips the SSRF check. We never retry (a retry could make the customer get two
+    answers) and never follow redirects.
     """
-    target = base_url.rstrip("/") + "/ai-reply"
-    body_dict = bot_request_body(payload, request_id)
+    target = url
+    body_dict = bot_request_body(payload, request_id, vendor_context=vendor_context)
     raw = json.dumps(body_dict, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     timestamp = int(time.time())
     headers = {

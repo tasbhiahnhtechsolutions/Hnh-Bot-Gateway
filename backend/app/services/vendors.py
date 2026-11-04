@@ -59,6 +59,7 @@ async def create_vendor(
         phone_e164=data.whatsapp_number,
         email=str(data.email),
         bot_base_url=data.bot_base_url.rstrip("/"),
+        vendor_context=data.vendor_context,
         bot_secret_enc=box.encrypt(bot_secret),
         status_webhook_url=data.status_webhook_url,
         webhook_secret_enc=box.encrypt(webhook_secret),
@@ -90,6 +91,7 @@ EDITABLE_FIELDS = (
     "whatsapp_number",
     "email",
     "bot_base_url",
+    "vendor_context",
     "status_webhook_url",
     "default_country_code",
     "internal_note",
@@ -110,6 +112,7 @@ async def update_vendor(
         "whatsapp_number": data.whatsapp_number,
         "email": str(data.email),
         "bot_base_url": data.bot_base_url.rstrip("/"),
+        "vendor_context": data.vendor_context,
         "status_webhook_url": data.status_webhook_url,
         "default_country_code": data.default_country_code,
         "internal_note": data.internal_note,
@@ -119,6 +122,7 @@ async def update_vendor(
         "whatsapp_number": vendor.phone_e164,
         "email": vendor.email,
         "bot_base_url": vendor.bot_base_url,
+        "vendor_context": vendor.vendor_context or {},
         "status_webhook_url": vendor.status_webhook_url,
         "default_country_code": vendor.default_country_code,
         "internal_note": vendor.internal_note,
@@ -140,7 +144,8 @@ async def update_vendor(
     vendor.business_name = data.business_name
     vendor.phone_e164 = data.whatsapp_number
     vendor.email = str(data.email)
-    vendor.bot_base_url = new_values["bot_base_url"]
+    vendor.bot_base_url = data.bot_base_url.rstrip("/")
+    vendor.vendor_context = data.vendor_context
     vendor.status_webhook_url = data.status_webhook_url
     vendor.default_country_code = data.default_country_code
     vendor.internal_note = data.internal_note

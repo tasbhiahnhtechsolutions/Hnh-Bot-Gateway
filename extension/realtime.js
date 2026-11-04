@@ -76,6 +76,7 @@
     function build() {
       socket = io(url, {
         transports: ['websocket'], // long-polling does not work inside a service worker
+        extraHeaders: { 'ngrok-skip-browser-warning': '1' },
         autoConnect: false,
         reconnection: true,
         reconnectionDelay: 1000,

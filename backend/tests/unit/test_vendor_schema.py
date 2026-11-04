@@ -71,3 +71,16 @@ def test_unknown_field_rejected_and_empty_optionals_become_none() -> None:
     vendor = make(status_webhook_url="", internal_note="")
     assert vendor.status_webhook_url is None
     assert vendor.internal_note is None
+    assert vendor.vendor_context == {}
+
+
+def test_vendor_context_accepts_json_object_or_string() -> None:
+    assert make(vendor_context={"clinicId": "gulberg"}).vendor_context == {"clinicId": "gulberg"}
+    assert make(vendor_context='{"city": "LHR"}').vendor_context == {"city": "LHR"}
+    assert make(vendor_context="").vendor_context == {}
+    with pytest.raises(ValidationError):
+        make(vendor_context="[1]")
+    with pytest.raises(ValidationError):
+        make(vendor_context="not json")
+    with pytest.raises(ValidationError):
+        make(vendor_context={"x": "y" * 9000})

@@ -89,7 +89,7 @@ services:
       - "127.0.0.1:8474:8474"
 
   # A vendor-style bot that follows ai-contract.md. The api container reaches it at
-  # http://reference-bot:9000 (create the vendor with --bot-url http://reference-bot:9000).
+  # http://reference-bot:9000/ai-reply (create the vendor with that full URL).
   reference-bot:
     profiles: ["bot"]
     build: ./reference-bot

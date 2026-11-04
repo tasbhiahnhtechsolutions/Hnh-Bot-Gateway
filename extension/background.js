@@ -124,7 +124,12 @@ async function fetchWithTimeout(url, options, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, { ...options, signal: controller.signal, redirect: 'error' });
+    return await fetch(url, {
+      ...options,
+      headers: { ...(options && options.headers), 'ngrok-skip-browser-warning': '1' },
+      signal: controller.signal,
+      redirect: 'error',
+    });
   } finally {
     clearTimeout(timer);
   }

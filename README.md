@@ -58,7 +58,7 @@ make e2e         # Playwright: real Chromium + extension + fake WhatsApp + docke
 signature, understands every media type and answers with `{"replies": [...]}`. Vendors can copy it.
 
 ```bash
-make gateway ARGS="create-vendor --name 'Ref Bot Shop' --number 923001230099 --email r@x.com --bot-url http://reference-bot:9000"
+make gateway ARGS="create-vendor --name 'Ref Bot Shop' --number 923001230099 --email r@x.com --bot-url http://reference-bot:9000/ai-reply"
 make bot BOT_SECRET=whsec_...          # the Bot secret printed above; starts it on :9000
 make gateway ARGS="test-bot <vendor-id>"
 make bot-test bot-lint

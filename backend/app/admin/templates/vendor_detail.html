@@ -17,6 +17,7 @@
     <tr><th>WhatsApp number</th><td class="mono">{{ vendor.phone_e164|phone }}</td></tr>
     <tr><th>Email</th><td>{{ vendor.email }}</td></tr>
     <tr><th>Bot URL</th><td class="mono">{{ vendor.bot_base_url or '-' }}</td></tr>
+    <tr><th>Vendor context</th><td class="mono"><pre>{{ vendor.vendor_context | tojson }}</pre></td></tr>
     <tr><th>Status webhook</th><td class="mono">{{ vendor.status_webhook_url or '-' }}</td></tr>
     <tr><th>Country code</th><td>{{ vendor.default_country_code }}</td></tr>
     <tr><th>Marketing today</th><td>{{ cap_used if cap_used is not none else 0 }} of {{ vendor.marketing_daily_cap }}</td></tr>

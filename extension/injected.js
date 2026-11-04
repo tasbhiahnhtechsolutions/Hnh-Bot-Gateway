@@ -878,10 +878,12 @@
 
   function pageLooksLoggedIn() {
     try {
-      // QR code = nobody is logged in. The chat list = WhatsApp Web is up, even if the
-      // internal Conn.state name is one we have not seen yet (UNVERIFIED on a real account).
-      if (document.querySelector('canvas[aria-label*="QR" i], div[data-ref][data-ref!=""]')) return false;
-      return Boolean(document.querySelector('#pane-side, [data-testid="chat-list"], #app [role="grid"]'));
+      const doc = window.document || document;
+      // Chat list first. Do NOT use [attr!=""] — that is jQuery, not CSS, and Chrome
+      // throws, so this function used to always return false (seen 2026-11-03).
+      if (doc.querySelector('#pane-side, [data-testid="chat-list"]')) return true;
+      if (doc.querySelector('canvas[aria-label*="QR" i]')) return false;
+      return false;
     } catch (_) {
       return false;
     }
@@ -889,20 +891,18 @@
 
   // connected | connecting | offline | logged_out | not_loaded
   function readWaState() {
+    // The chat list on screen wins over Conn.state: real WhatsApp has kept saying
+    // "connecting" (or an unknown name) after chats were already visible.
+    if (pageLooksLoggedIn()) return 'connected';
+    try {
+      if ((window.document || document).querySelector('canvas[aria-label*="QR" i]')) return 'logged_out';
+    } catch (_) { /* no DOM access */ }
     try {
       const mod = requireModule(['WAWebConnModel', 'WAWebConn', 'WAWebStreamModel']);
       const conn = mod?.Conn || mod?.default?.Conn || mod?.default || mod;
       const mapped = mapConnectionState(conn?.state ?? conn?.stream);
-      // If the internal name is still "connecting" but the chat list is on screen, trust the
-      // page: otherwise live outbound sits in queued forever (seen 2026-11-03).
-      if (mapped === 'connected' || (mapped && mapped !== 'connecting')) return mapped;
-      if (mapped === 'connecting' && pageLooksLoggedIn()) return 'connected';
       if (mapped) return mapped;
-    } catch (_) { /* fall through to the page itself */ }
-    try {
-      if (document.querySelector('canvas[aria-label*="QR" i], div[data-ref][data-ref!=""]')) return 'logged_out';
-      if (pageLooksLoggedIn()) return 'connected';
-    } catch (_) { /* no DOM access */ }
+    } catch (_) { /* fall through */ }
     return typeof window.require === 'function' ? 'connecting' : 'not_loaded';
   }
 
@@ -910,6 +910,7 @@
   function reportWaState() {
     const state = readWaState();
     lastReportedWaState = state;
+    window.__WA_GATEWAY_STATE = state; // so a human can type this in the console
     window.postMessage({ source: 'WA_GATEWAY_WA_STATE', state }, '*');
   }
 
@@ -1067,6 +1068,9 @@
 
   setInterval(reportWaState, WA_STATE_REPORT_MS);
   setTimeout(reportWaState, 500);
+  // #pane-side is often missing on the first tick; report again once the UI has painted.
+  setTimeout(reportWaState, 3000);
+  setTimeout(reportWaState, 8000);
 
   // =========================================================================
   // Multi-Bubble AI Reply Sequencer

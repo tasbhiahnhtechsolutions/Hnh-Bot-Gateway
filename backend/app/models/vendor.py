@@ -3,9 +3,10 @@
 import uuid
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
 from sqlalchemy import CheckConstraint, DateTime, Index, Integer, String, Text, func, text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -56,7 +57,10 @@ class Vendor(Base):
     phone_e164: Mapped[str] = mapped_column(String(20), index=True)  # digits with country code
     email: Mapped[str] = mapped_column(String(320))
 
-    bot_base_url: Mapped[str | None] = mapped_column(Text)
+    bot_base_url: Mapped[str | None] = mapped_column(Text)  # full inbound URL; we POST it as-is
+    vendor_context: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'::jsonb"), nullable=False
+    )
     bot_secret_enc: Mapped[str] = mapped_column(Text)  # Fernet token, never plain text
     status: Mapped[str] = mapped_column(
         String(20), default=VendorStatus.ACTIVE.value, server_default=VendorStatus.ACTIVE.value

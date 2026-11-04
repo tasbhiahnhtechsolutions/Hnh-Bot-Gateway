@@ -15,9 +15,9 @@
   <div class="row">
     <div><label for="email">Email *</label>
       <input id="email" type="email" name="email" value="{{ v.get('email', '') }}" required></div>
-    <div><label for="bot_base_url">Bot base URL *</label>
-      <input id="bot_base_url" type="text" name="bot_base_url" value="{{ v.get('bot_base_url', '') }}" required placeholder="https://bot.vendor.com">
-      <div class="hint">After creating, use "Test bot connection" on the vendor page.</div></div>
+    <div><label for="bot_base_url">Bot inbound URL *</label>
+      <input id="bot_base_url" type="text" name="bot_base_url" value="{{ v.get('bot_base_url', '') }}" required placeholder="https://bot.vendor.com/ai-reply">
+      <div class="hint">Full URL we POST. We do not add /ai-reply. After creating, use "Test bot connection".</div></div>
   </div>
   <div class="row">
     <div><label for="status_webhook_url">Status webhook URL</label>
@@ -42,6 +42,9 @@
         {% endfor %}
       </select></div>
   </div>
+  <label for="vendor_context">Vendor context (JSON object, optional)</label>
+  <textarea id="vendor_context" name="vendor_context" rows="4" placeholder='{"clinicId": "gulberg"}'>{{ v.get('vendor_context', '') }}</textarea>
+  <div class="hint">Sent as <span class="mono">vendorContext</span> on every inbound bot call for this number. Empty = {}.</div>
   <label for="internal_note">Internal note (admins only)</label>
   <textarea id="internal_note" name="internal_note">{{ v.get('internal_note', '') }}</textarea>
   <p><button type="submit">Create vendor</button> <a class="btn secondary" href="/admin/vendors">Cancel</a></p>
