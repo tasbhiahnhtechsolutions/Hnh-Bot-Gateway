@@ -6,5 +6,5 @@
 // Never put secrets here: the API key is entered by the user in the popup.
 self.WA_GATEWAY_CONFIG = {
   env: 'dev',
-  GATEWAY_BASE_URL: 'http://localhost:8000',
+  GATEWAY_BASE_URL: 'http://localhost:4149',
 };

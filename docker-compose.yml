@@ -1,5 +1,5 @@
-# Dev stack (plan section 3.2). Toxiproxy is only for the chaos tests (profile "chaos").
-# The reference bot only starts with `make bot BOT_SECRET=whsec_...` (profile "bot").
+# Gateway stack. One image: backend/Dockerfile (api, worker, beat).
+# Postgres/Redis stay on the internal network — only the API is published.
 services:
   postgres:
     image: postgres:16-alpine
@@ -7,28 +7,30 @@ services:
       POSTGRES_USER: gateway
       POSTGRES_PASSWORD: gateway
       POSTGRES_DB: gateway
-    ports:
-      - "127.0.0.1:5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    networks:
+      - gateway
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gateway"]
       interval: 3s
       timeout: 3s
       retries: 20
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "127.0.0.1:6380:6379"
     volumes:
       - redisdata:/data
+    networks:
+      - gateway
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 3s
       timeout: 3s
       retries: 20
+    restart: unless-stopped
 
   api:
     build: ./backend
@@ -39,11 +41,12 @@ services:
     command: >
       sh -c "alembic upgrade head &&
              uvicorn --factory app.main:create_app --host 0.0.0.0 --port 8000"
-    # Lets the gateway reach a bot running on the host: http://host.docker.internal:3000 (dev only)
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:4149:8000"
+    networks:
+      - gateway
     depends_on:
       postgres:
         condition: service_healthy
@@ -54,8 +57,8 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    restart: unless-stopped
 
-  # Celery worker: dispatches jobs, runs the virtual plugin (test keys), delivers webhooks.
   worker:
     build: ./backend
     env_file: .env
@@ -63,13 +66,17 @@ services:
       DATABASE_URL: postgresql+asyncpg://gateway:gateway@postgres:5432/gateway
       REDIS_URL: redis://redis:6379/0
     command: ["celery", "-A", "app.worker.celery_app", "worker", "-Q", "dispatch,maintenance,webhooks", "-c", "4", "-l", "INFO"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - gateway
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    restart: unless-stopped
 
-  # Celery beat: the 30 second safety nets (sweepers). Run exactly ONE of these.
   beat:
     build: ./backend
     env_file: .env
@@ -77,31 +84,36 @@ services:
       DATABASE_URL: postgresql+asyncpg://gateway:gateway@postgres:5432/gateway
       REDIS_URL: redis://redis:6379/0
     command: ["celery", "-A", "app.worker.celery_app", "beat", "-l", "INFO", "-s", "/tmp/celerybeat-schedule"]
+    networks:
+      - gateway
     depends_on:
       redis:
         condition: service_healthy
+    restart: unless-stopped
 
-  # Breaks the network between services on purpose (make chaos). Not started by default.
   toxiproxy:
     profiles: ["chaos"]
     image: ghcr.io/shopify/toxiproxy:2.9.0
-    ports:
-      - "127.0.0.1:8474:8474"
+    networks:
+      - gateway
 
-  # A vendor-style bot that follows ai-contract.md. The api container reaches it at
-  # http://reference-bot:9000/ai-reply (create the vendor with that full URL).
   reference-bot:
     profiles: ["bot"]
     build: ./reference-bot
     environment:
       BOT_SECRET: ${BOT_SECRET:-}
-    ports:
-      - "127.0.0.1:9000:9000"
+    networks:
+      - gateway
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9000/health')"]
       interval: 5s
       timeout: 3s
       retries: 20
+
+networks:
+  gateway:
+    name: gateway-internal
+    driver: bridge
 
 volumes:
   pgdata:

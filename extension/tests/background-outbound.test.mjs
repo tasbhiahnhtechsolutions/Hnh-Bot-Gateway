@@ -76,7 +76,7 @@ test('a live key on the vendor\'s own WhatsApp number opens the line, websocket 
   assert.equal(sockets.length, 1);
   assert.equal(sockets[0].connectCalls, 1);
   assert.deepEqual(plain(sockets[0].options.transports), ['websocket']);
-  assert.equal(sockets[0].url, 'http://localhost:8000');
+  assert.equal(sockets[0].url, 'http://localhost:4149');
   const auth = await new Promise((resolve) => sockets[0].options.auth(resolve));
   assert.deepEqual(plain(auth), { apiKey: KEY, deviceId: 'device-123', waNumber: '923001112222', version: '2.0.0' });
 });

@@ -14,14 +14,14 @@ Source of truth: `VENDOR_GATEWAY_PLAN.md`. Vendor contract: `ai-contract.md`.
 | `spike/` | Spike kit for a human to run on a real WhatsApp test account (Phase 2) |
 | `docs/MANUAL_CHECKLIST.md` | What only a human on real WhatsApp can check before a release |
 | `reference-bot/` | Example vendor bot (FastAPI) that follows `ai-contract.md`; vendors can copy it |
-| `docker-compose.yml` | Dev stack: Postgres, Redis, API (+ reference bot with `make bot`) |
+| `docker-compose.yml` | Stack: API host `:4149` (container 8000), worker, beat; Postgres/Redis internal |
 | `Makefile` | `make up`, `make test`, `make lint`, `make typecheck` |
 
 ## Quick start
 
 ```bash
 make up                  # creates .env (fresh SECRET_ENCRYPTION_KEY), builds, runs migrations
-curl localhost:8000/ready
+curl localhost:4149/ready
 make seed                # 3 demo vendors (demo-canned, demo-echo, demo-mockbot); keys printed once
 make gateway ARGS=list-vendors
 make test                # needs Docker (testcontainers)
@@ -32,8 +32,8 @@ make lint typecheck
 
 ```bash
 make seed                                   # prints one LIVE key per demo vendor
-curl localhost:8000/v1/plugin/whoami -H "X-API-Key: wab_live_..."
-curl localhost:8000/v1/ai-reply -H "X-API-Key: wab_live_..." -H 'Content-Type: application/json' \
+curl localhost:4149/v1/plugin/whoami -H "X-API-Key: wab_live_..."
+curl localhost:4149/v1/ai-reply -H "X-API-Key: wab_live_..." -H 'Content-Type: application/json' \
   -d '{"chatId":"923001112222@c.us","incomingMessages":[{"text":"price?","timestamp":"19:30:12"}]}'
 make gateway ARGS="simulate-incoming <vendor-id> --text 'hello' --scenario error500"
 ```
@@ -41,7 +41,7 @@ make gateway ARGS="simulate-incoming <vendor-id> --text 'hello' --scenario error
 Inbound modes: `forward`, `canned`, `echo`, `mock_bot`, `paused`. Bot failures answer the plugin with
 502/504 and nothing is sent to the customer.
 
-Host ports: API `8000`, Postgres `5433`, Redis `6380` (so they do not clash with local installs).
+Host port: API `4149` only (maps to container 8000). Postgres and Redis stay on the internal Docker network (not published).
 
 ## Tests (Phase 1, step 7)
 
@@ -73,7 +73,7 @@ make seed                      # also prints a dev admin (admin@example.com) pas
 make gateway ARGS="create-admin --email you@example.com --generate"   # real admins
 ```
 
-Open http://localhost:8000/admin. Pages: dashboard, vendors, create vendor (keys shown once),
+Open http://localhost:4149/admin. Pages: dashboard, vendors, create vendor (keys shown once),
 vendor detail (modes, suspend, rotate/revoke keys, canned rules, recent requests), Test Lab
 (text/file simulation, optional real bot), bot connection test, request logs, audit log.
 No JavaScript, no CDN. Roles: `superadmin` (everything) and `support` (view + Test Lab).
@@ -84,7 +84,7 @@ No JavaScript, no CDN. Roles: `superadmin` (everything) and `support` (view + Te
 
 ```bash
 make ext-test                 # node --check + 65 Node tests (no browser needed)
-make ext-dev                  # builds extension/dist/dev (gateway http://localhost:8000)
+make ext-dev                  # builds extension/dist/dev (gateway http://localhost:4149)
 make ext-prod URL=https://api.example.com
 ```
 

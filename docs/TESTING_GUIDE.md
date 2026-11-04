@@ -16,8 +16,8 @@ Ye guide dono tarah ke test cover karti hai:
 
 ## Part 0. Do browser tabs aur ek terminal
 
-- Swagger: `http://localhost:8000/docs`
-- Admin: `http://localhost:8000/admin`
+- Swagger: `http://localhost:4149/docs`
+- Admin: `http://localhost:4149/admin`
 - Terminal: har dafa pehle is folder mein jao:
 
 ```bash
@@ -32,7 +32,7 @@ cd "/home/jawad/Turabees Whatsapp Bot/Turabees_Whatsapp_Bot_V2/whatsup-plugin"
 
 ```bash
 make up
-curl localhost:8000/ready
+curl localhost:4149/ready
 ```
 
 **Dikhna chahiye:** `{"status":"ok","checks":{"database":"ok","redis":"ok"}}`
@@ -46,7 +46,7 @@ make seed
 Ye `admin@example.com` aur ek password **ek baar** print karta hai. Password copy kar lo.
 Seed 3 demo vendors bhi banata hai (`demo-canned`, `demo-echo`, `demo-mockbot`).
 
-Admin mein login karo: `http://localhost:8000/admin`.
+Admin mein login karo: `http://localhost:4149/admin`.
 
 **Dikhna chahiye:** Dashboard page, upar menu: Dashboard, Vendors, Request logs, Audit log.
 
@@ -215,7 +215,7 @@ Extension Connected ho (Part 4). **LIVE** key use karo. Number apne doosre phone
 Swagger se ya terminal se:
 
 ```bash
-curl -X POST localhost:8000/v1/message-to-customer \
+curl -X POST localhost:4149/v1/message-to-customer \
   -H "X-API-Key: wab_live_TUMHARI_KEY" \
   -H "Idempotency-Key: live1" \
   -H "Content-Type: application/json" \

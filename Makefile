@@ -88,7 +88,7 @@ spike-test:
 e2e:
 	$(COMPOSE) down -v
 	$(MAKE) up
-	@until curl -fs localhost:8000/ready >/dev/null; do sleep 2; done
+	@until curl -fs localhost:4149/ready >/dev/null; do sleep 2; done
 	cd extension/e2e && npm ci && npx playwright install chromium
 	@cd extension/e2e && npx playwright test; status=$$?; cd ../.. && $(COMPOSE) down -v; exit $$status
 

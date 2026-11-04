@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Builds the unpacked extension for one environment into dist/<env>/.
 //
-//   node build.mjs --env dev                       -> http://localhost:8000
+//   node build.mjs --env dev                       -> http://localhost:4149
 //   node build.mjs --env staging --url https://staging-api.example.com
 //   node build.mjs --env prod --url https://api.example.com
 //
@@ -16,7 +16,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const SOURCE_DIR = dirname(fileURLToPath(import.meta.url));
 const ENVS = ['dev', 'staging', 'prod'];
-const DEV_DEFAULT_URL = 'http://localhost:8000';
+const DEV_DEFAULT_URL = 'http://localhost:4149';
 const URL_ENV_VARS = { staging: 'GATEWAY_STAGING_URL', prod: 'GATEWAY_PROD_URL' };
 const COPIED_FILES = [
   'background.js',

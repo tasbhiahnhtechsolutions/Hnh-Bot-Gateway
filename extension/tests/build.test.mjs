@@ -19,13 +19,13 @@ const allText = (dir) =>
 
 test('dev build points at localhost and allows only WhatsApp Web plus the gateway', () => {
   const { outDir, origin } = build({ env: 'dev', outRoot, envVars: {} });
-  assert.equal(origin, 'http://localhost:8000');
+  assert.equal(origin, 'http://localhost:4149');
   const manifest = readJson(join(outDir, 'manifest.json'));
   assert.equal(manifest.manifest_version, 3);
-  assert.deepEqual(manifest.host_permissions, ['https://web.whatsapp.com/*', 'http://localhost:8000/*']);
+  assert.deepEqual(manifest.host_permissions, ['https://web.whatsapp.com/*', 'http://localhost:4149/*']);
   assert.deepEqual(manifest.permissions, ['storage', 'alarms']);
   assert.match(manifest.name, /\(dev\)$/);
-  assert.match(readFileSync(join(outDir, 'config.js'), 'utf8'), /"GATEWAY_BASE_URL": "http:\/\/localhost:8000"/);
+  assert.match(readFileSync(join(outDir, 'config.js'), 'utf8'), /"GATEWAY_BASE_URL": "http:\/\/localhost:4149"/);
 });
 
 test('prod build has the prod origin only and no trace of localhost', () => {

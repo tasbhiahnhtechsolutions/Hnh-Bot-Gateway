@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { flush, jsonResponse, makeBackground } from './helpers.mjs';
 
-const GATEWAY = 'http://localhost:8000';
+const GATEWAY = 'http://localhost:4149';
 const KEY = 'wab_live_k3f9a1xz_SUPERSECRETVALUE';
 const TAB = { tab: { id: 7 } };
 const PAYLOAD = { chatId: '923009990001@c.us', senderName: 'Ali', incomingMessages: [{ text: 'salam', timestamp: '10:00:00', media: null }], chatHistory: [] };

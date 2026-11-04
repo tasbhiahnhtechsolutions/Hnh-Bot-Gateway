@@ -11,7 +11,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const FAKE_PAGE = fs.readFileSync(path.join(here, 'fake-page.html'), 'utf8');
 const FAKE_SCRIPT = fs.readFileSync(path.join(here, 'fake-whatsapp.js'), 'utf8');
 
-export const GATEWAY = 'http://localhost:8000';
+export const GATEWAY = 'http://localhost:4149';
 export const vendors = () => JSON.parse(process.env.E2E_VENDORS);
 export const vendorNamed = (name) => vendors().find((v) => v.name === name);
 
